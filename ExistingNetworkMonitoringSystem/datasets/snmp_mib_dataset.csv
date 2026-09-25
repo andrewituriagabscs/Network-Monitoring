@@ -1,7 +1,0 @@
-id,recorded_at,device_name,target,device_type,protocol,online,latency_ms,packet_loss,cpu_percent,memory_percent,bandwidth_percent,send_kbps,receive_kbps,throughput_kbps,mib_in_octets,mib_out_octets,mib_in_errors,mib_out_errors,mib_in_rate,mib_out_rate,anomaly_score,anomaly_label,error
-1,2026-09-23T08:15:45+00:00,Local machine,127.0.0.1,server,icmp,1,1.0,0.0,,,,0.0,0.0,0.0,,,,,,,0.96,Normal MIB telemetry,
-2,2026-09-23T08:26:59+00:00,Local machine,127.0.0.1,server,icmp,1,1.0,0.0,,,,0.0,0.0,0.0,,,,,,,0.96,Normal MIB telemetry,
-3,2026-09-23T08:27:00+00:00,Local machine,127.0.0.1,server,icmp,1,1.0,0.0,,,,1.0,2.3,3.2,,,,,,,0.96,Normal MIB telemetry,
-4,2026-09-23T08:28:23+00:00,Local machine,127.0.0.1,server,icmp,1,1.0,0.0,,,,0.0,0.0,0.0,,,,,,,0.96,Normal MIB telemetry,
-5,2026-09-23T08:28:23+00:00,Local machine,127.0.0.1,server,icmp,1,1.0,0.0,,,,1.6,2.4,4.0,,,,,,,0.96,Normal MIB telemetry,
-6,2026-09-23T09:14:00+00:00,Local machine,127.0.0.1,server,icmp,1,1.0,0.0,,,,0.0,0.0,0.0,,,,,,,0.96,Normal MIB telemetry,

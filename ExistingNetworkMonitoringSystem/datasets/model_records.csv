@@ -1,7 +1,0 @@
-id,recorded_at,device_name,model_version,result,confidence,status
-1,2026-09-23T08:15:45+00:00,Local machine,mib-anomaly-v1,Normal MIB telemetry,0.96,Normal
-2,2026-09-23T08:26:59+00:00,Local machine,mib-anomaly-v1,Normal MIB telemetry,0.96,Normal
-3,2026-09-23T08:27:00+00:00,Local machine,mib-anomaly-v1,Normal MIB telemetry,0.96,Normal
-4,2026-09-23T08:28:23+00:00,Local machine,mib-anomaly-v1,Normal MIB telemetry,0.96,Normal
-5,2026-09-23T08:28:23+00:00,Local machine,mib-anomaly-v1,Normal MIB telemetry,0.96,Normal
-6,2026-09-23T09:14:00+00:00,Local machine,mib-anomaly-v1,Normal MIB telemetry,0.96,Normal
