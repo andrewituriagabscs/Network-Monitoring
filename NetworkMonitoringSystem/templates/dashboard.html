@@ -1,0 +1,334 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>{{ title }}</title>
+    <link rel="stylesheet" href="/static/style.css">
+</head>
+<body>
+    <div class="app-shell">
+        <aside class="sidebar" aria-label="Main navigation">
+            <div class="brand"><span class="brand-mark" aria-hidden="true">N</span><span>NetWatch</span></div>
+            <nav class="nav-list">
+                <button class="nav-item active" type="button" data-view="dashboard" aria-current="page"><span class="nav-icon" aria-hidden="true">⌂</span><span>Dashboard</span></button>
+                <button class="nav-item" type="button" data-view="monitor"><span class="nav-icon" aria-hidden="true">◉</span><span>Real-time Monitor</span></button>
+                <button class="nav-item" type="button" data-view="anomaly"><span class="nav-icon" aria-hidden="true">△</span><span>Anomaly Detection</span></button>
+                <button class="nav-item" type="button" data-view="root-cause"><span class="nav-icon" aria-hidden="true">⌘</span><span>Root Cause Analysis</span></button>
+                <button class="nav-item" type="button" data-view="prediction"><span class="nav-icon" aria-hidden="true">⌁</span><span>Prediction</span></button>
+                <button class="nav-item" type="button" data-view="alerts"><span class="nav-icon" aria-hidden="true">♧</span><span>Alerts</span></button>
+                <button class="nav-item" type="button" data-view="reports"><span class="nav-icon" aria-hidden="true">▤</span><span>Reports</span></button>
+                <button class="nav-item" type="button" data-view="comparison"><span class="nav-icon" aria-hidden="true">⇄</span><span>System Comparison</span></button>
+                <button class="nav-item" type="button" data-view="recommendations"><span class="nav-icon" aria-hidden="true">✧</span><span>Recommendations</span></button>
+            </nav>
+            <nav class="nav-list nav-list-bottom" aria-label="Preferences">
+                <button class="nav-item" type="button" data-view="settings"><span class="nav-icon" aria-hidden="true">⚙</span><span>Settings</span></button>
+                <button class="nav-item" type="button" data-view="about"><span class="nav-icon" aria-hidden="true">?</span><span>About</span></button>
+            </nav>
+        </aside>
+
+        <main class="page">
+            <section class="view-panel active" data-panel="dashboard">
+                <header>
+                    <div>
+                        <p class="eyebrow">Network overview</p>
+                        <h1>{{ title }}</h1>
+                        <p>Generated at {{ generated_at }}</p>
+                    </div>
+                    <button class="refresh-button" type="button" onclick="window.location.reload()">↻ <span>Refresh data</span></button>
+                </header>
+
+                <section class="summary-cards">
+                    <div class="card"><h2>Total Devices</h2><p>{{ summary.total_devices }}</p></div>
+                    <div class="card"><h2>Active Alerts</h2><p>{{ summary.active_alerts }}</p></div>
+                    <div class="card"><h2>Network Health</h2><p>{{ summary.network_health }}</p></div>
+                    <div class="card"><h2>Bandwidth Usage</h2><p>{{ summary.bandwidth_usage }}</p></div>
+                </section>
+
+                <section class="metrics">
+                    <h2>Key Metrics</h2>
+                    <div class="metric-grid">
+                        {% for item in metrics %}
+                        <div class="metric-card"><strong>{{ item.label }}</strong><span>{{ item.value }}</span><small>{{ item.trend }}</small></div>
+                        {% endfor %}
+                    </div>
+                </section>
+
+                <section class="ml-overview">
+                    <div class="section-heading"><div><p class="eyebrow">Machine learning</p><h2>Model status</h2></div><span class="status-pill status-normal">Live</span></div>
+                    <div class="summary-cards ml-cards">
+                        <div class="card"><h2>Active model</h2><p class="small-value">{{ ml_summary.model }}</p><small>{{ ml_summary.version }}</small></div>
+                        <div class="card"><h2>Model accuracy</h2><p>{{ ml_summary.accuracy }}</p><small>Validation score</small></div>
+                        <div class="card"><h2>Records today</h2><p>{{ ml_summary.records_today }}</p><small>Last run {{ ml_summary.last_run }}</small></div>
+                    </div>
+                </section>
+
+                <section class="alerts">
+                    <h2>Recent Alerts</h2>
+                    <table>
+                        <thead><tr><th>Time</th><th>Device</th><th>Message</th></tr></thead>
+                        <tbody>
+                            {% for alert in alerts %}
+                            <tr><td>{{ alert.time }}</td><td>{{ alert.device }}</td><td>{{ alert.message }}</td></tr>
+                            {% endfor %}
+                        </tbody>
+                    </table>
+                </section>
+            </section>
+
+            <section class="view-panel data-panel" data-panel="monitor" hidden>
+                <div class="monitor-heading"><div><p class="eyebrow">Live telemetry</p><h1>Real-time Monitor</h1><p class="panel-intro">Current device health and traffic signals.</p></div><button class="refresh-button" type="button" onclick="pollNow(this)">↻ <span>Poll now</span></button></div>
+                <div class="summary-cards"><div class="card"><h2>Devices online</h2><p>{{ monitor_summary.online }} / {{ monitor_summary.total }}</p></div><div class="card"><h2>Connection</h2><p class="small-value">{{ monitor_summary.connection.type }}</p><small>{{ monitor_summary.connection.interface }} · {{ monitor_summary.connection.speed }}</small></div><div class="card"><h2>Stream status</h2><p class="small-value">{{ monitor_summary.status }}</p><small>Last poll {{ monitor_summary.last_check }}</small></div></div>
+                <div class="chart-grid"><div class="chart-card"><div class="chart-heading"><div><h2>Upload and download speed</h2><small>Ethernet traffic activity</small></div><span class="chart-keys"><span class="chart-key"><i class="key-upload"></i>Upload</span><span class="chart-key"><i class="key-download"></i>Download</span></span></div><canvas id="throughput-chart" height="220"></canvas></div><div class="chart-card"><div class="chart-heading"><div><h2>Ping prediction outlook</h2><small>ICMP latency trend</small></div><span class="chart-key"><i class="key-dash"></i>Ping forecast (ms)</span></div><canvas id="prediction-chart" height="220"></canvas></div></div>
+                <div class="table-wrap"><table><thead><tr><th>Device</th><th>Target</th><th>Protocol</th><th>Status</th><th>Latency</th><th>Last check</th></tr></thead><tbody>{% for row in monitor_summary.devices %}<tr><td>{{ row.device }}</td><td>{{ row.target }}</td><td><span class="status-pill status-protocol">{{ row.protocol }}</span></td><td><span class="status-pill {% if row.status == 'Online' %}status-normal{% else %}status-warning{% endif %}">{{ row.status }}</span></td><td>{{ row.latency }}</td><td>{{ row.last_check }}</td></tr>{% else %}<tr><td colspan="6">No telemetry collected yet.</td></tr>{% endfor %}</tbody></table></div>
+            </section>
+            <section class="view-panel data-panel" data-panel="anomaly" hidden>
+                <p class="eyebrow">ML detections</p><h1>Anomaly Detection</h1><p class="panel-intro">Events ranked by model confidence.</p>
+                <div class="table-wrap"><table><thead><tr><th>Time</th><th>Device</th><th>Detection</th><th>Confidence</th></tr></thead><tbody>{% for row in anomalies %}<tr><td>{{ row.time }}</td><td>{{ row.device }}</td><td>{{ row.type }}</td><td><span class="status-pill status-warning">{{ row.confidence }}</span></td></tr>{% endfor %}</tbody></table></div>
+            </section>
+            <section class="view-panel data-panel" data-panel="root-cause" hidden>
+                <p class="eyebrow">Explainable ML</p><h1>Root Cause Analysis</h1><p class="panel-intro">Likely causes for detected network incidents.</p>
+                <div class="table-wrap"><table><thead><tr><th>Incident</th><th>Likely cause</th><th>Device</th><th>Confidence</th></tr></thead><tbody>{% for row in root_causes %}<tr><td>{{ row.incident }}</td><td>{{ row.cause }}</td><td>{{ row.device }}</td><td>{{ row.confidence }}</td></tr>{% endfor %}</tbody></table></div>
+            </section>
+            <section class="view-panel data-panel" data-panel="prediction" hidden>
+                <p class="eyebrow">ICMP and SNMP forecasting</p><h1>Prediction</h1><p class="panel-intro">Protocol-aware predictions from ping reachability and SNMP device metrics.</p>
+                <div class="table-wrap"><table><thead><tr><th>Device</th><th>Protocol</th><th>Forecast</th><th>Source</th><th>Confidence</th></tr></thead><tbody>{% for row in predictions %}<tr><td>{{ row.device }}</td><td><span class="status-pill status-protocol">{{ row.protocol }}</span></td><td>{{ row.forecast }}</td><td>{{ row.when }}</td><td>{{ row.confidence }}</td></tr>{% else %}<tr><td colspan="5">No protocol predictions available yet.</td></tr>{% endfor %}</tbody></table></div>
+            </section>
+            <section class="view-panel data-panel" data-panel="alerts" hidden>
+                <p class="eyebrow">Action queue</p><h1>Alerts</h1><p class="panel-intro">Network and ML events that need attention.</p>
+                <div class="table-wrap"><table><thead><tr><th>Time</th><th>Device</th><th>Message</th><th>Status</th></tr></thead><tbody>{% for alert in alerts %}<tr><td>{{ alert.time }}</td><td>{{ alert.device }}</td><td>{{ alert.message }}</td><td><span class="status-pill status-warning">Open</span></td></tr>{% endfor %}</tbody></table></div>
+            </section>
+            <section class="view-panel data-panel" data-panel="reports" hidden>
+                <p class="eyebrow">Machine-learning records</p><h1>Reports</h1><p class="panel-intro">This is the main record of every model inference and its outcome.</p>
+                <div class="record-note"><strong>What to track:</strong> model version, run time, device input, prediction, confidence, and review status.</div>
+                <div class="history-toolbar"><strong>History range</strong><div class="range-buttons"><button type="button" class="range-button active" data-hours="1">1 hour</button><button type="button" class="range-button" data-hours="24">24 hours</button><button type="button" class="range-button" data-hours="168">7 days</button></div></div>
+                <div class="table-wrap"><table id="reports-table"><thead><tr><th>Time</th><th>Device</th><th>Model</th><th>Result</th><th>Confidence</th><th>Status</th></tr></thead><tbody>{% for row in ml_records %}<tr data-recorded-at="{{ row.recorded_at }}"><td>{{ row.time }}</td><td>{{ row.device }}</td><td>{{ row.model }}</td><td>{{ row.result }}</td><td>{{ row.confidence }}</td><td><span class="status-pill {% if row.status == 'Normal' %}status-normal{% else %}status-warning{% endif %}">{{ row.status }}</span></td></tr>{% endfor %}</tbody></table></div>
+            </section>
+            <section class="view-panel data-panel" data-panel="comparison" hidden>
+                <p class="eyebrow">Benchmarking</p><h1>System Comparison</h1><p class="panel-intro">Compare the signals that matter across monitored systems.</p>
+                <div class="summary-cards"><div class="card"><h2>Best health</h2><p class="small-value">Server-04</p><small>98% normal predictions</small></div><div class="card"><h2>Most alerts</h2><p class="small-value">Router-01</p><small>Needs review</small></div><div class="card"><h2>Lowest latency</h2><p>12 ms</p><small>Server-04</small></div></div>
+            </section>
+            <section class="view-panel data-panel" data-panel="recommendations" hidden>
+                <p class="eyebrow">Decision support</p><h1>Recommendations</h1><p class="panel-intro">Actions prioritized from model results and device health.</p>
+                <div class="table-wrap"><table><thead><tr><th>Priority</th><th>Recommended action</th><th>Reason</th></tr></thead><tbody>{% for row in recommendations %}<tr><td><span class="status-pill status-warning">{{ row.priority }}</span></td><td>{{ row.action }}</td><td>{{ row.reason }}</td></tr>{% endfor %}</tbody></table></div>
+            </section>
+            <section class="view-panel data-panel" data-panel="settings" hidden>
+                <p class="eyebrow">Model configuration</p><h1>Settings</h1><p class="panel-intro">The essential controls for trustworthy monitoring.</p>
+                <div class="settings-list">
+                    <div class="appearance-setting"><div class="theme-logo" aria-hidden="true"><span class="theme-sun">☀</span><span class="theme-moon">☾</span></div><div><strong>Appearance</strong><small id="theme-label">Light mode</small></div><label class="switch-control" for="theme-toggle"><span class="sr-only">Turn dark mode on or off</span><input id="theme-toggle" type="checkbox"><span class="switch-slider"></span></label></div>
+                    <label><span>Anomaly confidence threshold</span><input type="number" value="80" min="1" max="100">%</label>
+                    <label><span>Record normal predictions</span><input type="checkbox" checked></label>
+                    <label><span>Alert on forecast confidence above 85%</span><input type="checkbox" checked></label>
+                </div>
+            </section>
+            <section class="view-panel data-panel" data-panel="about" hidden>
+                <p class="eyebrow">Network Monitoring System</p><h1>About</h1><p class="panel-intro">A machine-learning assisted network monitoring dashboard for tracking health, anomalies, causes, predictions, and model records.</p>
+            </section>
+        </main>
+    </div>
+    <script>
+        function pollNow(button) {
+            button.disabled = true;
+            button.querySelector('span').textContent = 'Polling...';
+            fetch('/api/monitor-now', {method: 'POST'}).then(() => window.location.reload()).catch(() => {
+                button.disabled = false;
+                button.querySelector('span').textContent = 'Poll failed';
+            });
+        }
+
+        const monitorHistory = {{ monitor_summary.history | tojson }};
+
+        let chartPhase = 0;
+
+        function drawChart(canvasId, values, forecastValues, phase, unit) {
+            const canvas = document.getElementById(canvasId);
+            if (!canvas) return;
+            const width = canvas.clientWidth || 600;
+            const height = 220;
+            const ratio = window.devicePixelRatio || 1;
+            canvas.width = width * ratio;
+            canvas.height = height * ratio;
+            const context = canvas.getContext('2d');
+            context.scale(ratio, ratio);
+            context.clearRect(0, 0, width, height);
+            const padding = {top: 18, right: 18, bottom: 28, left: 38};
+            const allValues = values.concat(forecastValues || []).filter((value) => Number.isFinite(value));
+            const maximum = Math.max(...allValues, 10);
+            const minimum = Math.min(...allValues, 0);
+            const range = Math.max(maximum - minimum, 1);
+            const x = (index, count) => padding.left + (index / Math.max(count - 1, 1)) * (width - padding.left - padding.right);
+            const y = (value) => height - padding.bottom - ((value - minimum) / range) * (height - padding.top - padding.bottom);
+            context.strokeStyle = getComputedStyle(document.body).getPropertyValue('--chart-grid') || '#dce6ee';
+            context.lineWidth = 1;
+            for (let index = 0; index < 4; index += 1) {
+                const lineY = padding.top + index * ((height - padding.top - padding.bottom) / 3);
+                context.beginPath(); context.moveTo(padding.left, lineY); context.lineTo(width - padding.right, lineY); context.stroke();
+            }
+            const drawLine = (points, color, dashed) => {
+                if (!points.length) return;
+                context.beginPath(); context.setLineDash(dashed ? [6, 5] : []); context.strokeStyle = color; context.lineWidth = 2.5;
+                points.forEach((value, index) => index ? context.lineTo(x(index, points.length), y(value)) : context.moveTo(x(index, points.length), y(value)));
+                context.stroke(); context.setLineDash([]);
+            };
+            drawLine(values, '#1976c9', false);
+            if (forecastValues && forecastValues.length) drawLine(forecastValues, '#e08a24', true);
+            if (values.length > 1) {
+                const markerX = padding.left + ((phase % 1) * (width - padding.left - padding.right));
+                    context.beginPath();
+                    context.setLineDash([3, 5]);
+                    context.strokeStyle = '#e08a24';
+                    context.lineWidth = 1;
+                    context.moveTo(markerX, padding.top);
+                    context.lineTo(markerX, height - padding.bottom);
+                    context.stroke();
+                    context.setLineDash([]);
+                context.beginPath();
+                context.arc(markerX, y(values[Math.min(values.length - 1, Math.floor((phase % 1) * values.length))]), 4, 0, Math.PI * 2);
+                context.fillStyle = forecastValues && forecastValues.length ? '#e08a24' : '#1976c9';
+                context.fill();
+            }
+            context.fillStyle = getComputedStyle(document.body).color;
+            context.font = '12px Segoe UI';
+            context.fillText(`${Math.round(maximum)} ${unit}`, 4, padding.top + 4);
+            context.fillText(`${Math.round(minimum)} ${unit}`, 4, height - padding.bottom + 4);
+        }
+
+        function drawThroughputChart() {
+            const canvas = document.getElementById('throughput-chart');
+            if (!canvas) return;
+            const width = canvas.clientWidth || 600;
+            const height = 220;
+            const ratio = window.devicePixelRatio || 1;
+            canvas.width = width * ratio;
+            canvas.height = height * ratio;
+            const context = canvas.getContext('2d');
+            context.scale(ratio, ratio);
+            context.clearRect(0, 0, width, height);
+            const padding = {top: 18, right: 18, bottom: 28, left: 48};
+            const upload = monitorHistory.map((item) => Number(item.send)).filter(Number.isFinite);
+            const download = monitorHistory.map((item) => Number(item.receive)).filter(Number.isFinite);
+            const allValues = upload.concat(download);
+            const maximum = Math.max(...allValues, 10);
+            const range = Math.max(maximum, 1);
+            const x = (index, count) => padding.left + (index / Math.max(count - 1, 1)) * (width - padding.left - padding.right);
+            const y = (value) => height - padding.bottom - (value / range) * (height - padding.top - padding.bottom);
+            context.strokeStyle = getComputedStyle(document.body).getPropertyValue('--chart-grid') || '#dce6ee';
+            context.lineWidth = 1;
+            for (let index = 0; index < 4; index += 1) {
+                const lineY = padding.top + index * ((height - padding.top - padding.bottom) / 3);
+                context.beginPath(); context.moveTo(padding.left, lineY); context.lineTo(width - padding.right, lineY); context.stroke();
+            }
+            const drawSeries = (values, color) => {
+                if (!values.length) return;
+                context.beginPath(); context.strokeStyle = color; context.lineWidth = 2.5;
+                values.forEach((value, index) => index ? context.lineTo(x(index, values.length), y(value)) : context.moveTo(x(index, values.length), y(value)));
+                context.stroke();
+            };
+            drawSeries(upload, '#e07825');
+            drawSeries(download, '#1976c9');
+            const markerX = padding.left + ((chartPhase % 1) * (width - padding.left - padding.right));
+            context.beginPath(); context.setLineDash([3, 5]); context.strokeStyle = '#8999a8'; context.lineWidth = 1; context.moveTo(markerX, padding.top); context.lineTo(markerX, height - padding.bottom); context.stroke(); context.setLineDash([]);
+            context.fillStyle = getComputedStyle(document.body).color;
+            context.font = '12px Segoe UI';
+            context.fillText(`${Math.round(maximum)} Kbps`, 4, padding.top + 4);
+            context.fillText('0 Kbps', 4, height - padding.bottom + 4);
+        }
+
+        function drawMonitorCharts() {
+            const throughputValues = monitorHistory.map((item) => item.throughput).filter((value) => Number.isFinite(value));
+            const pingValues = monitorHistory.map((item) => item.latency).filter((value) => Number.isFinite(value));
+            const forecastStart = pingValues.length ? pingValues[pingValues.length - 1] : 0;
+            const forecastValues = pingValues.length ? [forecastStart, forecastStart * 1.05, forecastStart * 1.1, forecastStart * 1.08] : [];
+            drawThroughputChart();
+            drawChart('prediction-chart', pingValues.slice(-6), forecastValues, chartPhase, 'ms');
+        }
+
+        function animateCharts() {
+            chartPhase = (chartPhase + 0.004) % 1;
+            if (!document.querySelector('[data-panel="monitor"][hidden]')) drawMonitorCharts();
+            window.requestAnimationFrame(animateCharts);
+        }
+
+        let livePollInProgress = false;
+
+        function refreshLiveCharts() {
+            if (livePollInProgress || document.querySelector('[data-panel="monitor"][hidden]')) return;
+            livePollInProgress = true;
+            fetch('/api/monitor-now', {method: 'POST'})
+                .then((response) => response.json())
+                .then((payload) => {
+                    payload.samples.forEach((sample) => {
+                        monitorHistory.push({time: sample.recorded_at, latency: sample.latency_ms, throughput: sample.throughput_kbps, send: sample.send_kbps, receive: sample.receive_kbps, online: sample.online, packet_loss: sample.packet_loss});
+                    });
+                    while (monitorHistory.length > 100) monitorHistory.shift();
+                    drawMonitorCharts();
+                })
+                .catch(() => {})
+                .finally(() => { livePollInProgress = false; });
+        }
+
+        function refreshThroughputChart() {
+            if (document.querySelector('[data-panel="monitor"][hidden]')) return;
+            fetch('/api/throughput')
+                .then((response) => response.json())
+                .then((throughput) => {
+                    monitorHistory.push({time: new Date().toISOString(), latency: null, throughput: throughput.throughput_kbps, send: throughput.send_kbps, receive: throughput.receive_kbps, online: true, packet_loss: 0});
+                    while (monitorHistory.length > 180) monitorHistory.shift();
+                    drawMonitorCharts();
+                })
+                .catch(() => {});
+        }
+
+        document.querySelectorAll('.range-button').forEach((button) => {
+            button.addEventListener('click', () => {
+                const hours = Number(button.dataset.hours);
+                const cutoff = Date.now() - hours * 60 * 60 * 1000;
+                document.querySelectorAll('.range-button').forEach((item) => item.classList.toggle('active', item === button));
+                document.querySelectorAll('#reports-table tbody tr').forEach((row) => {
+                    row.hidden = Date.parse(row.dataset.recordedAt) < cutoff;
+                });
+            });
+        });
+
+        const savedTheme = localStorage.getItem('network-monitor-theme');
+        const themeToggle = document.querySelector('#theme-toggle');
+        const themeLabel = document.querySelector('#theme-label');
+
+        function setTheme(isDark) {
+            document.body.classList.toggle('dark-mode', isDark);
+            themeToggle.checked = isDark;
+            themeLabel.textContent = isDark ? 'Dark mode' : 'Light mode';
+            localStorage.setItem('network-monitor-theme', isDark ? 'dark' : 'light');
+        }
+
+        setTheme(savedTheme === 'dark');
+        themeToggle.addEventListener('change', () => setTheme(themeToggle.checked));
+
+        const navItems = document.querySelectorAll('.nav-item');
+        const panels = document.querySelectorAll('[data-panel]');
+
+        navItems.forEach((item) => {
+            item.addEventListener('click', () => {
+                const view = item.dataset.view;
+                navItems.forEach((navItem) => {
+                    const isActive = navItem === item;
+                    navItem.classList.toggle('active', isActive);
+                    if (isActive) navItem.setAttribute('aria-current', 'page');
+                    else navItem.removeAttribute('aria-current');
+                });
+                panels.forEach((panel) => {
+                    const isVisible = panel.dataset.panel === view;
+                    panel.hidden = !isVisible;
+                    panel.classList.toggle('active', isVisible);
+                });
+                if (view === 'monitor') window.setTimeout(drawMonitorCharts, 0);
+            });
+        });
+
+        window.addEventListener('resize', drawMonitorCharts);
+        window.setInterval(refreshLiveCharts, 5000);
+        window.setInterval(refreshThroughputChart, 1000);
+        window.requestAnimationFrame(animateCharts);
+    </script>
+</body>
+</html>
