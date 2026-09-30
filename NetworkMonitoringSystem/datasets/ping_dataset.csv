@@ -1,0 +1,1 @@
+id,recorded_at,device_name,target,online,ping_sent,ping_received,packet_loss,latency_min_ms,latency_median_ms,latency_max_ms,latency_readings,anomaly_score,anomaly_label,error

@@ -21,6 +21,7 @@ body.dark-mode .card,
 body.dark-mode .metric-card,
 body.dark-mode .table-wrap,
 body.dark-mode .settings-list label,
+body.dark-mode .settings-list .reference-setting,
 body.dark-mode .coming-soon {
     background: #172634;
     border-color: #2b4153;
@@ -51,7 +52,9 @@ body.dark-mode .record-note {
 }
 
 body.dark-mode .refresh-button,
-body.dark-mode .settings-list input[type="number"] {
+body.dark-mode .settings-list input[type="number"],
+body.dark-mode .ml-label-select,
+body.dark-mode .ml-feedback-control {
     border-color: #3b566b;
     background: #172634;
     color: #e5edf5;
@@ -101,7 +104,7 @@ body.dark-mode .settings-list input[type="number"] {
 }
 
 .nav-list-bottom {
-    margin-top: auto;
+    margin-top: 14px;
 }
 
 .nav-item {
@@ -179,6 +182,131 @@ header {
 
 .monitor-heading .panel-intro {
     margin-bottom: 0;
+}
+
+.ml-heading {
+    display: flex;
+    align-items: flex-start;
+    justify-content: space-between;
+    margin-bottom: 20px;
+}
+
+.ml-heading .panel-intro {
+    margin-bottom: 0;
+}
+
+.ml-status-line {
+    padding: 12px 14px;
+    border-left: 3px solid #1976c9;
+    background: rgba(255, 255, 255, .72);
+    color: #536b81;
+}
+
+.ml-training-section {
+    max-width: none;
+}
+
+.ml-training-section .panel-intro {
+    max-width: 820px;
+}
+
+.ml-label-select {
+    min-width: 140px;
+    padding: 7px 9px;
+    border: 1px solid #c9d7e6;
+    border-radius: 5px;
+    background: #fff;
+    color: #172333;
+    font: inherit;
+}
+
+.ml-feedback-control {
+    min-width: 125px;
+    max-width: 200px;
+    padding: 7px 8px;
+    border: 1px solid #c9d7e6;
+    border-radius: 5px;
+    background: #fff;
+    color: #172333;
+    font: inherit;
+}
+
+.ml-results-section {
+    margin-top: 26px;
+}
+
+#train-models-button:disabled {
+    cursor: not-allowed;
+    opacity: .55;
+}
+
+.discovery-controls {
+    max-width: 620px;
+    margin: 0 0 24px;
+    padding: 18px;
+    border: 1px solid #d9e4ed;
+    border-radius: 8px;
+    background: #fff;
+}
+
+.discovery-controls > label,
+.chart-heading > label {
+    display: block;
+    margin-bottom: 8px;
+    color: #536b81;
+    font-size: .85rem;
+    font-weight: 600;
+}
+
+.discovery-row {
+    display: flex;
+    gap: 8px;
+}
+
+.discovery-row input,
+#monitored-rows input[type="number"],
+.chart-heading select {
+    min-width: 0;
+    padding: 9px 10px;
+    border: 1px solid #c9d7e6;
+    border-radius: 6px;
+    background: #fff;
+    color: #172333;
+    font: inherit;
+}
+
+.discovery-row input {
+    flex: 1;
+}
+
+#monitored-rows input[type="number"] {
+    width: 78px;
+}
+
+.discovery-controls [role="status"] {
+    min-height: 1.2em;
+    margin: 10px 0 0;
+    color: #536b81;
+    font-size: .85rem;
+}
+
+body.dark-mode .discovery-controls {
+    border-color: #2b4153;
+    background: #172634;
+}
+
+body.dark-mode .discovery-controls > label,
+body.dark-mode .chart-heading > label,
+body.dark-mode .discovery-controls [role="status"] {
+    color: #9db1c3;
+}
+
+body.dark-mode .discovery-row input,
+body.dark-mode #monitored-rows input[type="number"],
+body.dark-mode .chart-heading select {
+    border-color: #3b566b;
+    background: #172634;
+    color: #e5edf5;
 }
 
 .chart-grid {
@@ -558,6 +686,41 @@ body.dark-mode .status-protocol {
     background: #fff;
 }
 
+.reference-setting {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) minmax(230px, auto);
+    align-items: center;
+    gap: 14px;
+    padding: 14px 17px;
+    background: #fff;
+}
+
+.reference-setting strong,
+.reference-setting small {
+    display: block;
+}
+
+.reference-setting small {
+    margin-top: 3px;
+    color: #71859a;
+}
+
+.reference-controls {
+    display: flex;
+    gap: 8px;
+}
+
+.reference-controls input {
+    min-width: 0;
+    width: 150px;
+    padding: 7px 9px;
+    border: 1px solid #c9d7e6;
+    border-radius: 5px;
+    background: #fff;
+    color: #172333;
+    font: inherit;
+}
+
 .appearance-setting strong,
 .appearance-setting small {
     display: block;
@@ -741,6 +904,14 @@ body.dark-mode .theme-moon {
     }
 
     .monitor-heading {
+        display: block;
+    }
+
+    .reference-setting {
+        grid-template-columns: 1fr;
+    }
+
+    .ml-heading {
         display: block;
     }
 

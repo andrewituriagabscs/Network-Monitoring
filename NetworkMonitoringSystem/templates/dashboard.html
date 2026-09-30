@@ -9,17 +9,13 @@
 <body>
     <div class="app-shell">
         <aside class="sidebar" aria-label="Main navigation">
-            <div class="brand"><span class="brand-mark" aria-hidden="true">N</span><span>NetWatch</span></div>
+            <div class="brand"><span class="brand-mark" aria-hidden="true">P</span><span>PingWatch</span></div>
             <nav class="nav-list">
                 <button class="nav-item active" type="button" data-view="dashboard" aria-current="page"><span class="nav-icon" aria-hidden="true">⌂</span><span>Dashboard</span></button>
-                <button class="nav-item" type="button" data-view="monitor"><span class="nav-icon" aria-hidden="true">◉</span><span>Real-time Monitor</span></button>
-                <button class="nav-item" type="button" data-view="anomaly"><span class="nav-icon" aria-hidden="true">△</span><span>Anomaly Detection</span></button>
-                <button class="nav-item" type="button" data-view="root-cause"><span class="nav-icon" aria-hidden="true">⌘</span><span>Root Cause Analysis</span></button>
-                <button class="nav-item" type="button" data-view="prediction"><span class="nav-icon" aria-hidden="true">⌁</span><span>Prediction</span></button>
-                <button class="nav-item" type="button" data-view="alerts"><span class="nav-icon" aria-hidden="true">♧</span><span>Alerts</span></button>
-                <button class="nav-item" type="button" data-view="reports"><span class="nav-icon" aria-hidden="true">▤</span><span>Reports</span></button>
-                <button class="nav-item" type="button" data-view="comparison"><span class="nav-icon" aria-hidden="true">⇄</span><span>System Comparison</span></button>
-                <button class="nav-item" type="button" data-view="recommendations"><span class="nav-icon" aria-hidden="true">✧</span><span>Recommendations</span></button>
+                <button class="nav-item" type="button" data-view="monitor"><span class="nav-icon" aria-hidden="true">◉</span><span>Monitor PCs</span></button>
+                <button class="nav-item" type="button" data-view="alerts"><span class="nav-icon" aria-hidden="true">!</span><span>Alerts</span></button>
+                <button class="nav-item" type="button" data-view="reports"><span class="nav-icon" aria-hidden="true">▤</span><span>Ping Records</span></button>
+                <button class="nav-item" type="button" data-view="ml-insights"><span class="nav-icon" aria-hidden="true">⌁</span><span>ML Insights</span></button>
             </nav>
             <nav class="nav-list nav-list-bottom" aria-label="Preferences">
                 <button class="nav-item" type="button" data-view="settings"><span class="nav-icon" aria-hidden="true">⚙</span><span>Settings</span></button>
@@ -29,120 +25,365 @@
 
         <main class="page">
             <section class="view-panel active" data-panel="dashboard">
-                <header>
-                    <div>
-                        <p class="eyebrow">Network overview</p>
-                        <h1>{{ title }}</h1>
-                        <p>Generated at {{ generated_at }}</p>
-                    </div>
-                    <button class="refresh-button" type="button" onclick="window.location.reload()">↻ <span>Refresh data</span></button>
-                </header>
-
+                <header><div><p class="eyebrow">ICMP network status</p><h1>{{ title }}</h1><p>Updated {{ generated_at }}</p></div><button class="refresh-button" type="button" onclick="refreshStatus()">↻ <span>Refresh</span></button></header>
                 <section class="summary-cards">
-                    <div class="card"><h2>Total Devices</h2><p>{{ summary.total_devices }}</p></div>
-                    <div class="card"><h2>Active Alerts</h2><p>{{ summary.active_alerts }}</p></div>
-                    <div class="card"><h2>Network Health</h2><p>{{ summary.network_health }}</p></div>
-                    <div class="card"><h2>Bandwidth Usage</h2><p>{{ summary.bandwidth_usage }}</p></div>
+                    <div class="card"><h2>Saved PCs</h2><p id="saved-count">{{ summary.total_devices }}</p></div>
+                    <div class="card"><h2>Monitoring</h2><p id="active-count">{{ summary.active_devices }}</p></div>
+                    <div class="card"><h2>Network status</h2><p id="network-health">{{ summary.network_health }}</p></div>
+                    <div class="card"><h2>Open alerts</h2><p>{{ summary.active_alerts }}</p></div>
                 </section>
-
-                <section class="metrics">
-                    <h2>Key Metrics</h2>
-                    <div class="metric-grid">
-                        {% for item in metrics %}
-                        <div class="metric-card"><strong>{{ item.label }}</strong><span>{{ item.value }}</span><small>{{ item.trend }}</small></div>
-                        {% endfor %}
-                    </div>
+                <section class="metrics"><h2>Ping metrics</h2><div class="metric-grid">
+                    {% for item in metrics %}<div class="metric-card"><strong>{{ item.label }}</strong><span>{{ item.value }}</span><small>{{ item.trend }}</small></div>{% endfor %}
+                </div></section>
+                <section class="ml-overview"><div class="section-heading"><div><p class="eyebrow">Model readiness</p><h2>Machine learning</h2></div><span class="status-pill status-normal">ICMP only</span></div>
+                    <div class="summary-cards ml-cards"><div class="card"><h2>Model set</h2><p class="small-value">{{ ml_summary.model }}</p><small>{{ ml_summary.version }}</small></div><div class="card"><h2>Valid ping samples</h2><p>{{ ml_summary.valid_samples }}</p><small>Available for training</small></div><div class="card"><h2>Reviewed labels</h2><p>{{ ml_summary.labeled_samples }}</p><small>For supervised classification</small></div></div>
                 </section>
-
-                <section class="ml-overview">
-                    <div class="section-heading"><div><p class="eyebrow">Machine learning</p><h2>Model status</h2></div><span class="status-pill status-normal">Live</span></div>
-                    <div class="summary-cards ml-cards">
-                        <div class="card"><h2>Active model</h2><p class="small-value">{{ ml_summary.model }}</p><small>{{ ml_summary.version }}</small></div>
-                        <div class="card"><h2>Model accuracy</h2><p>{{ ml_summary.accuracy }}</p><small>Validation score</small></div>
-                        <div class="card"><h2>Records today</h2><p>{{ ml_summary.records_today }}</p><small>Last run {{ ml_summary.last_run }}</small></div>
-                    </div>
-                </section>
-
-                <section class="alerts">
-                    <h2>Recent Alerts</h2>
-                    <table>
-                        <thead><tr><th>Time</th><th>Device</th><th>Message</th></tr></thead>
-                        <tbody>
-                            {% for alert in alerts %}
-                            <tr><td>{{ alert.time }}</td><td>{{ alert.device }}</td><td>{{ alert.message }}</td></tr>
-                            {% endfor %}
-                        </tbody>
-                    </table>
-                </section>
+                <section class="alerts"><h2>Recent alerts</h2><table><thead><tr><th>Time</th><th>PC</th><th>Ping event</th></tr></thead><tbody id="alert-rows">
+                    {% for alert in alerts %}<tr><td>{{ alert.time }}</td><td>{{ alert.device }}</td><td>{{ alert.message }}</td></tr>{% else %}<tr><td colspan="3">No ping alerts.</td></tr>{% endfor %}
+                </tbody></table></section>
             </section>
 
             <section class="view-panel data-panel" data-panel="monitor" hidden>
-                <div class="monitor-heading"><div><p class="eyebrow">Live telemetry</p><h1>Real-time Monitor</h1><p class="panel-intro">Current device health and traffic signals.</p></div><button class="refresh-button" type="button" onclick="pollNow(this)">↻ <span>Poll now</span></button></div>
-                <div class="summary-cards"><div class="card"><h2>Devices online</h2><p>{{ monitor_summary.online }} / {{ monitor_summary.total }}</p></div><div class="card"><h2>Connection</h2><p class="small-value">{{ monitor_summary.connection.type }}</p><small>{{ monitor_summary.connection.interface }} · {{ monitor_summary.connection.speed }}</small></div><div class="card"><h2>Stream status</h2><p class="small-value">{{ monitor_summary.status }}</p><small>Last poll {{ monitor_summary.last_check }}</small></div></div>
-                <div class="chart-grid"><div class="chart-card"><div class="chart-heading"><div><h2>Upload and download speed</h2><small>Ethernet traffic activity</small></div><span class="chart-keys"><span class="chart-key"><i class="key-upload"></i>Upload</span><span class="chart-key"><i class="key-download"></i>Download</span></span></div><canvas id="throughput-chart" height="220"></canvas></div><div class="chart-card"><div class="chart-heading"><div><h2>Ping prediction outlook</h2><small>ICMP latency trend</small></div><span class="chart-key"><i class="key-dash"></i>Ping forecast (ms)</span></div><canvas id="prediction-chart" height="220"></canvas></div></div>
-                <div class="table-wrap"><table><thead><tr><th>Device</th><th>Target</th><th>Protocol</th><th>Status</th><th>Latency</th><th>Last check</th></tr></thead><tbody>{% for row in monitor_summary.devices %}<tr><td>{{ row.device }}</td><td>{{ row.target }}</td><td><span class="status-pill status-protocol">{{ row.protocol }}</span></td><td><span class="status-pill {% if row.status == 'Online' %}status-normal{% else %}status-warning{% endif %}">{{ row.status }}</span></td><td>{{ row.latency }}</td><td>{{ row.last_check }}</td></tr>{% else %}<tr><td colspan="6">No telemetry collected yet.</td></tr>{% endfor %}</tbody></table></div>
+                <div class="monitor-heading"><div><p class="eyebrow">Local network</p><h1>Monitor PCs</h1><p class="panel-intro">Discover responding PCs, select the ones to monitor, and start ping checks.</p></div><button class="refresh-button" type="button" onclick="pollNow(this)">↻ <span>Ping now</span></button></div>
+                <section class="discovery-controls">
+                    <label for="subnet-input">Subnet to discover</label>
+                    <div class="discovery-row"><input id="subnet-input" type="text" inputmode="decimal" aria-label="Local IPv4 subnet in CIDR notation"><button class="refresh-button" id="discover-button" type="button" onclick="discoverHosts(this)">⌕ <span>Discover PCs</span></button></div>
+                    <p id="discovery-status" role="status"></p>
+                </section>
+                <section id="discovery-section" hidden><div class="section-heading"><h2>Available PCs</h2><button class="refresh-button" type="button" onclick="addSelectedHosts()">＋ <span>Add selected</span></button></div><div class="table-wrap"><table><thead><tr><th>Select</th><th>PC / hostname</th><th>IPv4 address</th></tr></thead><tbody id="discovered-rows"></tbody></table></div></section>
+                <section><div class="section-heading"><h2>Selected PCs</h2><span id="monitor-summary"></span></div><div class="chart-card"><div class="chart-heading"><div><h2>Ping latency</h2><small>Median of five ICMP replies per check; Windows may report values as &lt;1 ms.</small></div><label for="chart-device">PC</label><select id="chart-device" aria-label="Select PC for latency chart" onchange="drawPingChart()"></select></div><canvas id="ping-chart" height="220"></canvas></div>
+                    <div class="table-wrap"><table><thead><tr><th>PC</th><th>IPv4 address</th><th>Latest ping</th><th>Min</th><th>Median</th><th>Max</th><th>Loss</th><th>Interval (sec)</th><th>Control</th></tr></thead><tbody id="monitored-rows"></tbody></table></div>
+                </section>
             </section>
-            <section class="view-panel data-panel" data-panel="anomaly" hidden>
-                <p class="eyebrow">ML detections</p><h1>Anomaly Detection</h1><p class="panel-intro">Events ranked by model confidence.</p>
-                <div class="table-wrap"><table><thead><tr><th>Time</th><th>Device</th><th>Detection</th><th>Confidence</th></tr></thead><tbody>{% for row in anomalies %}<tr><td>{{ row.time }}</td><td>{{ row.device }}</td><td>{{ row.type }}</td><td><span class="status-pill status-warning">{{ row.confidence }}</span></td></tr>{% endfor %}</tbody></table></div>
+
+            <section class="view-panel data-panel" data-panel="alerts" hidden><p class="eyebrow">Ping events</p><h1>Alerts</h1><p class="panel-intro">Unreachable PCs and high-latency ping results.</p><div class="table-wrap"><table><thead><tr><th>Time</th><th>PC</th><th>Event</th><th>Status</th></tr></thead><tbody>{% for alert in alerts %}<tr><td>{{ alert.time }}</td><td>{{ alert.device }}</td><td>{{ alert.message }}</td><td><span class="status-pill status-warning">Open</span></td></tr>{% else %}<tr><td colspan="4">No ping alerts.</td></tr>{% endfor %}</tbody></table></div></section>
+
+            <section class="view-panel data-panel" data-panel="reports" hidden><p class="eyebrow">ICMP history</p><h1>Ping Records</h1><p class="panel-intro">Saved ping replies, packet loss, and latency statistics.</p><p><a class="refresh-button" href="/api/dataset.csv">Download ping dataset</a> <a class="refresh-button" href="/api/model-records.csv">Download ping records</a></p><div class="history-toolbar"><strong>History range</strong><div class="range-buttons"><button type="button" class="range-button active" data-hours="1">1 hour</button><button type="button" class="range-button" data-hours="24">24 hours</button><button type="button" class="range-button" data-hours="168">7 days</button></div></div><div class="table-wrap"><table id="reports-table"><thead><tr><th>Time</th><th>PC</th><th>IP</th><th>Replies</th><th>Loss</th><th>Min</th><th>Median</th><th>Max</th></tr></thead><tbody>{% for row in monitor_summary.history|reverse %}<tr data-recorded-at="{{ row.time }}"><td>{{ row.time }}</td><td>{{ row.device }}</td><td>{{ row.target }}</td><td>{{ row.ping_received }}/{{ row.ping_sent }}</td><td>{{ row.packet_loss }}%</td><td>{{ row.latency_min_display }}</td><td>{{ row.latency_median_display }}</td><td>{{ row.latency_max_display }}</td></tr>{% else %}<tr><td colspan="8">No ping records yet.</td></tr>{% endfor %}</tbody></table></div></section>
+
+            <section class="view-panel data-panel" data-panel="ml-insights" hidden>
+                <header class="ml-heading"><div><p class="eyebrow">Model training and results</p><h1>ML Insights</h1><p class="panel-intro">Train and review ping anomaly, forecast, and condition models.</p></div><button class="refresh-button" id="train-models-button" type="button" onclick="trainMlModels(this)">Train models</button></header>
+                <p id="ml-status-line" class="ml-status-line" role="status">Loading model readiness...</p>
+                <p id="ml-action-status" role="status"></p>
+                <section class="summary-cards ml-cards">
+                    <div class="card"><h2>Isolation Forest</h2><p id="if-model-state">Checking</p><small id="if-model-detail">Unsupervised anomaly detection</small></div>
+                    <div class="card"><h2>GRU</h2><p id="gru-model-state">Checking</p><small id="gru-model-detail">Next-sample latency, loss, and reachability forecast</small></div>
+                    <div class="card"><h2>XGBoost</h2><p id="xgb-model-state">Checking</p><small id="xgb-model-detail">Reviewed condition classification</small></div>
+                </section>
+                <section class="ml-results-section">
+                    <div class="section-heading"><h2>Gateway and external comparison</h2><button class="range-button" id="poll-references-button" type="button" onclick="pollNetworkReferences(this)">Ping references</button></div>
+                    <p class="panel-intro">Reference and PC statistics use the latest five samples, up to 25 probes. ICMP filtering can affect results; comparisons are indicators, not confirmed causes.</p>
+                    <p><a class="refresh-button" href="/api/network-references.csv">Download reference samples</a></p>
+                    <div class="table-wrap"><table><thead><tr><th>Reference</th><th>Target</th><th>Latest check</th><th>Rolling loss</th><th>Median latency</th><th>Latency variation</th></tr></thead><tbody id="reference-rows"><tr><td colspan="6">Loading references...</td></tr></tbody></table></div>
+                    <div class="table-wrap"><table><thead><tr><th>PC</th><th>Rolling loss</th><th>Median latency</th><th>Latency variation</th><th>Comparison</th></tr></thead><tbody id="reference-device-rows"><tr><td colspan="5">Loading PC comparisons...</td></tr></tbody></table></div>
+                </section>
+                <section class="discovery-controls ml-training-section">
+                    <h2>Review training labels</h2>
+                    <p class="panel-intro">Labels describe the observed ping condition, not a verified physical root cause. Review samples before using them to train XGBoost or the normal baseline.</p>
+                    <div class="table-wrap"><table><thead><tr><th>Time</th><th>PC</th><th>Latest ping</th><th>Loss</th><th>Condition label</th><th>Action</th></tr></thead><tbody id="ml-label-rows"><tr><td colspan="6">Loading samples...</td></tr></tbody></table></div>
+                </section>
+                <section class="ml-results-section">
+                    <div class="section-heading"><h2>Latest model outputs</h2><button class="range-button" type="button" onclick="refreshMlPanel()">Refresh</button></div>
+                    <p class="panel-intro">Bottleneck, congestion, and failure are ping-based risk indicators derived from GRU forecasts, not confirmed physical causes.</p>
+                    <div class="table-wrap"><table><thead><tr><th>PC</th><th>Latest ping</th><th>Isolation Forest</th><th>GRU forecast</th><th>XGBoost condition</th><th>Predicted risks</th></tr></thead><tbody id="ml-insight-rows"><tr><td colspan="6">Loading predictions...</td></tr></tbody></table></div>
+                </section>
+                <section class="ml-results-section">
+                    <h2>Suggested next steps</h2>
+                    <p class="panel-intro">Suggestions are advisory. Selecting one records your choice; it does not change network settings or retrain a model.</p>
+                    <div class="table-wrap"><table><thead><tr><th>PC</th><th>Model</th><th>Evidence</th><th>Suggested check</th><th>Action</th></tr></thead><tbody id="ml-recommendation-rows"><tr><td colspan="5">Loading suggestions...</td></tr></tbody></table></div>
+                </section>
+                <section class="ml-results-section">
+                    <h2>Selected actions and outcomes</h2>
+                    <p class="panel-intro">After performing a check, record whether it resolved the issue and any verified finding. This feedback is saved for review, not used for immediate online training.</p>
+                    <p><a class="refresh-button" href="/api/ml/recommendation-feedback.csv">Download feedback</a></p>
+                    <div class="table-wrap"><table><thead><tr><th>Selected</th><th>PC</th><th>Model and evidence</th><th>Action</th><th>Outcome</th><th>Verified finding</th><th>Notes</th><th>Save</th></tr></thead><tbody id="ml-feedback-rows"><tr><td colspan="8">Loading feedback...</td></tr></tbody></table></div>
+                </section>
             </section>
-            <section class="view-panel data-panel" data-panel="root-cause" hidden>
-                <p class="eyebrow">Explainable ML</p><h1>Root Cause Analysis</h1><p class="panel-intro">Likely causes for detected network incidents.</p>
-                <div class="table-wrap"><table><thead><tr><th>Incident</th><th>Likely cause</th><th>Device</th><th>Confidence</th></tr></thead><tbody>{% for row in root_causes %}<tr><td>{{ row.incident }}</td><td>{{ row.cause }}</td><td>{{ row.device }}</td><td>{{ row.confidence }}</td></tr>{% endfor %}</tbody></table></div>
-            </section>
-            <section class="view-panel data-panel" data-panel="prediction" hidden>
-                <p class="eyebrow">ICMP and SNMP forecasting</p><h1>Prediction</h1><p class="panel-intro">Protocol-aware predictions from ping reachability and SNMP device metrics.</p>
-                <div class="table-wrap"><table><thead><tr><th>Device</th><th>Protocol</th><th>Forecast</th><th>Source</th><th>Confidence</th></tr></thead><tbody>{% for row in predictions %}<tr><td>{{ row.device }}</td><td><span class="status-pill status-protocol">{{ row.protocol }}</span></td><td>{{ row.forecast }}</td><td>{{ row.when }}</td><td>{{ row.confidence }}</td></tr>{% else %}<tr><td colspan="5">No protocol predictions available yet.</td></tr>{% endfor %}</tbody></table></div>
-            </section>
-            <section class="view-panel data-panel" data-panel="alerts" hidden>
-                <p class="eyebrow">Action queue</p><h1>Alerts</h1><p class="panel-intro">Network and ML events that need attention.</p>
-                <div class="table-wrap"><table><thead><tr><th>Time</th><th>Device</th><th>Message</th><th>Status</th></tr></thead><tbody>{% for alert in alerts %}<tr><td>{{ alert.time }}</td><td>{{ alert.device }}</td><td>{{ alert.message }}</td><td><span class="status-pill status-warning">Open</span></td></tr>{% endfor %}</tbody></table></div>
-            </section>
-            <section class="view-panel data-panel" data-panel="reports" hidden>
-                <p class="eyebrow">Machine-learning records</p><h1>Reports</h1><p class="panel-intro">This is the main record of every model inference and its outcome.</p>
-                <div class="record-note"><strong>What to track:</strong> model version, run time, device input, prediction, confidence, and review status.</div>
-                <div class="history-toolbar"><strong>History range</strong><div class="range-buttons"><button type="button" class="range-button active" data-hours="1">1 hour</button><button type="button" class="range-button" data-hours="24">24 hours</button><button type="button" class="range-button" data-hours="168">7 days</button></div></div>
-                <div class="table-wrap"><table id="reports-table"><thead><tr><th>Time</th><th>Device</th><th>Model</th><th>Result</th><th>Confidence</th><th>Status</th></tr></thead><tbody>{% for row in ml_records %}<tr data-recorded-at="{{ row.recorded_at }}"><td>{{ row.time }}</td><td>{{ row.device }}</td><td>{{ row.model }}</td><td>{{ row.result }}</td><td>{{ row.confidence }}</td><td><span class="status-pill {% if row.status == 'Normal' %}status-normal{% else %}status-warning{% endif %}">{{ row.status }}</span></td></tr>{% endfor %}</tbody></table></div>
-            </section>
-            <section class="view-panel data-panel" data-panel="comparison" hidden>
-                <p class="eyebrow">Benchmarking</p><h1>System Comparison</h1><p class="panel-intro">Compare the signals that matter across monitored systems.</p>
-                <div class="summary-cards"><div class="card"><h2>Best health</h2><p class="small-value">Server-04</p><small>98% normal predictions</small></div><div class="card"><h2>Most alerts</h2><p class="small-value">Router-01</p><small>Needs review</small></div><div class="card"><h2>Lowest latency</h2><p>12 ms</p><small>Server-04</small></div></div>
-            </section>
-            <section class="view-panel data-panel" data-panel="recommendations" hidden>
-                <p class="eyebrow">Decision support</p><h1>Recommendations</h1><p class="panel-intro">Actions prioritized from model results and device health.</p>
-                <div class="table-wrap"><table><thead><tr><th>Priority</th><th>Recommended action</th><th>Reason</th></tr></thead><tbody>{% for row in recommendations %}<tr><td><span class="status-pill status-warning">{{ row.priority }}</span></td><td>{{ row.action }}</td><td>{{ row.reason }}</td></tr>{% endfor %}</tbody></table></div>
-            </section>
-            <section class="view-panel data-panel" data-panel="settings" hidden>
-                <p class="eyebrow">Model configuration</p><h1>Settings</h1><p class="panel-intro">The essential controls for trustworthy monitoring.</p>
-                <div class="settings-list">
-                    <div class="appearance-setting"><div class="theme-logo" aria-hidden="true"><span class="theme-sun">☀</span><span class="theme-moon">☾</span></div><div><strong>Appearance</strong><small id="theme-label">Light mode</small></div><label class="switch-control" for="theme-toggle"><span class="sr-only">Turn dark mode on or off</span><input id="theme-toggle" type="checkbox"><span class="switch-slider"></span></label></div>
-                    <label><span>Anomaly confidence threshold</span><input type="number" value="80" min="1" max="100">%</label>
-                    <label><span>Record normal predictions</span><input type="checkbox" checked></label>
-                    <label><span>Alert on forecast confidence above 85%</span><input type="checkbox" checked></label>
-                </div>
-            </section>
-            <section class="view-panel data-panel" data-panel="about" hidden>
-                <p class="eyebrow">Network Monitoring System</p><h1>About</h1><p class="panel-intro">A machine-learning assisted network monitoring dashboard for tracking health, anomalies, causes, predictions, and model records.</p>
-            </section>
+
+            <section class="view-panel data-panel" data-panel="settings" hidden><p class="eyebrow">Display and monitoring</p><h1>Settings</h1><div class="settings-list"><div class="appearance-setting"><div class="theme-logo" aria-hidden="true"><span class="theme-sun">☀</span><span class="theme-moon">☾</span></div><div><strong>Appearance</strong><small id="theme-label">Light mode</small></div><label class="switch-control" for="theme-toggle"><span class="sr-only">Turn dark mode on or off</span><input id="theme-toggle" type="checkbox"><span class="switch-slider"></span></label></div><div class="reference-setting"><div><strong>External ping reference</strong><small>IPv4 address; some hosts may block ICMP.</small></div><div class="reference-controls"><input id="external-reference-ip" type="text" inputmode="decimal" placeholder="1.1.1.1" aria-label="External reference IPv4 address"><button class="range-button" type="button" onclick="saveExternalReference()">Save</button></div></div></div><p id="reference-setting-status" role="status"></p></section>
+
+            <section class="view-panel data-panel" data-panel="about" hidden><p class="eyebrow">ICMP monitoring</p><h1>About</h1><p class="panel-intro">This system checks PC reachability, packet loss, and round-trip latency using ping.</p></section>
         </main>
     </div>
     <script>
-        function pollNow(button) {
+        let monitorDevices = [];
+        let monitorHistory = {{ monitor_summary.history | tojson }};
+        let latestSampleId = null;
+
+        async function requestJson(url, options = {}) {
+            const response = await fetch(url, options);
+            const payload = await response.json();
+            if (!response.ok) throw new Error(payload.error || `Request failed (${response.status})`);
+            return payload;
+        }
+
+        function setStatus(message) {
+            document.querySelector('#discovery-status').textContent = message;
+        }
+
+        async function discoverHosts(button) {
             button.disabled = true;
-            button.querySelector('span').textContent = 'Polling...';
-            fetch('/api/monitor-now', {method: 'POST'}).then(() => window.location.reload()).catch(() => {
-                button.disabled = false;
-                button.querySelector('span').textContent = 'Poll failed';
+            setStatus('Discovering responding addresses...');
+            try {
+                const {hosts} = await requestJson('/api/discover', {method: 'POST', headers: {'Content-Type': 'application/json'}, body: JSON.stringify({subnet: document.querySelector('#subnet-input').value})});
+                const selected = new Set(monitorDevices.map((device) => device.target));
+                document.querySelector('#discovered-rows').innerHTML = hosts.map((host) => `<tr><td><input type="checkbox" value="${host.target}" ${selected.has(host.target) ? 'disabled' : ''}></td><td>${escapeHtml(host.name)}</td><td>${host.target}</td></tr>`).join('') || '<tr><td colspan="3">No responding PCs found.</td></tr>';
+                document.querySelector('#discovery-section').hidden = false;
+                setStatus(`${hosts.length} responding address${hosts.length === 1 ? '' : 'es'} found.`);
+            } catch (error) { setStatus(error.message); }
+            finally { button.disabled = false; }
+        }
+
+        async function addSelectedHosts() {
+            const selected = [...document.querySelectorAll('#discovered-rows input:checked')].map((checkbox) => {
+                const row = checkbox.closest('tr');
+                return {target: checkbox.value, name: row.cells[1].textContent};
             });
+            if (!selected.length) { setStatus('Select at least one available PC.'); return; }
+            try {
+                await requestJson('/api/devices', {method: 'POST', headers: {'Content-Type': 'application/json'}, body: JSON.stringify({devices: selected})});
+                setStatus(`${selected.length} PC${selected.length === 1 ? '' : 's'} added. Start monitoring when ready.`);
+                await refreshStatus();
+            } catch (error) { setStatus(error.message); }
         }
 
-        const monitorHistory = {{ monitor_summary.history | tojson }};
+        function escapeHtml(value) {
+            const element = document.createElement('span');
+            element.textContent = value;
+            return element.innerHTML;
+        }
 
-        let chartPhase = 0;
+        function escapeAttribute(value) {
+            return escapeHtml(value).replaceAll('"', '&quot;').replaceAll("'", '&#39;');
+        }
 
-        function drawChart(canvasId, values, forecastValues, phase, unit) {
-            const canvas = document.getElementById(canvasId);
-            if (!canvas) return;
+        async function setMonitoring(id, active) {
+            try {
+                await requestJson(`/api/devices/${id}`, {method: 'PATCH', headers: {'Content-Type': 'application/json'}, body: JSON.stringify({active})});
+                await refreshStatus();
+            } catch (error) { setStatus(error.message); }
+        }
+
+        async function setIntervalSeconds(id, input) {
+            const interval_seconds = Number(input.value);
+            try {
+                await requestJson(`/api/devices/${id}`, {method: 'PATCH', headers: {'Content-Type': 'application/json'}, body: JSON.stringify({interval_seconds})});
+                input.value = Math.max(5, Math.min(3600, interval_seconds));
+            } catch (error) { setStatus(error.message); }
+        }
+
+        async function removeDevice(id) {
+            try { await requestJson(`/api/devices/${id}`, {method: 'DELETE'}); await refreshStatus(); }
+            catch (error) { setStatus(error.message); }
+        }
+
+        function renderDevices(devices) {
+            monitorDevices = devices;
+            const tbody = document.querySelector('#monitored-rows');
+            tbody.innerHTML = devices.map((device) => `<tr><td>${escapeHtml(device.name)}</td><td>${device.target}</td><td>${device.latest?.online ? 'Online' : device.latest ? 'Offline' : 'Not checked'}</td><td>${device.latest?.latency_min_display || '-'}</td><td>${device.latest?.latency_median_display || '-'}</td><td>${device.latest?.latency_max_display || '-'}</td><td>${device.latest ? `${device.latest.packet_loss}%` : '-'}</td><td><input type="number" min="5" max="3600" value="${device.interval_seconds}" aria-label="Ping interval seconds" onchange="setIntervalSeconds(${device.id}, this)"></td><td><button class="range-button" type="button" onclick="setMonitoring(${device.id}, ${!device.active})">${device.active ? 'Pause' : 'Start'}</button> <button class="range-button" type="button" onclick="removeDevice(${device.id})" aria-label="Remove ${escapeHtml(device.name)}">Remove</button></td></tr>`).join('') || '<tr><td colspan="9">Discover and add PCs to monitor.</td></tr>';
+            document.querySelector('#saved-count').textContent = devices.length;
+            document.querySelector('#active-count').textContent = devices.filter((device) => device.active).length;
+            document.querySelector('#monitor-summary').textContent = `${devices.filter((device) => device.active).length} active`;
+            const chartSelect = document.querySelector('#chart-device');
+            const current = chartSelect.value;
+            chartSelect.innerHTML = devices.map((device) => `<option value="${device.target}">${escapeHtml(device.name)}</option>`).join('');
+            if (devices.some((device) => device.target === current)) chartSelect.value = current;
+        }
+
+        async function refreshStatus() {
+            try {
+                const data = await requestJson('/api/status');
+                const latestByTarget = new Map();
+                data.telemetry.forEach((sample) => { if (!latestByTarget.has(sample.target)) latestByTarget.set(sample.target, sample); });
+                renderDevices(data.devices.map((device) => ({...device, latest: latestByTarget.get(device.target) || null})));
+                const fresh = data.telemetry.slice().reverse();
+                if (fresh.length && fresh[fresh.length - 1].id !== latestSampleId) {
+                    latestSampleId = fresh[fresh.length - 1].id;
+                    monitorHistory = fresh.map((sample) => ({time: sample.recorded_at, device: sample.target, latency: sample.latency_median_ms ?? sample.latency_ms, latency_min_display:sample.latency_min_display, latency_median_display:sample.latency_median_display, latency_max_display:sample.latency_max_display, ping_received:sample.ping_received, ping_sent:sample.ping_sent, online: Boolean(sample.online), packet_loss: sample.packet_loss}));
+                    document.querySelector('#reports-table tbody').innerHTML = fresh.slice().reverse().map((sample) => `<tr data-recorded-at="${sample.recorded_at}"><td>${sample.recorded_at}</td><td>${escapeHtml(sample.device_name)}</td><td>${sample.target}</td><td>${sample.ping_received}/${sample.ping_sent}</td><td>${sample.packet_loss}%</td><td>${sample.latency_min_display}</td><td>${sample.latency_median_display}</td><td>${sample.latency_max_display}</td></tr>`).join('') || '<tr><td colspan="8">No ping records yet.</td></tr>';
+                    drawPingChart();
+                }
+            } catch (error) { setStatus(error.message); }
+        }
+
+        function modelReadinessText(status, model, dependencyNames) {
+            const trained = status.models?.[model]?.state === 'trained';
+            if (trained) return 'Trained';
+            if (dependencyNames.some((name) => !status.dependencies[name])) return 'Dependency needed';
+            return status[model]?.ready ? 'Ready to train' : 'Collecting data';
+        }
+
+        function updateModelReadiness(status) {
+            const classCounts = status.label_counts || {};
+            const classText = Object.entries(classCounts).map(([label, count]) => `${label}: ${count}`).join(', ') || 'no reviewed labels';
+            document.querySelector('#ml-status-line').textContent = `${status.telemetry_samples} valid ping samples; ${status.labeled_samples} reviewed labels (${classText}). Training uses chronological holdouts.`;
+
+            const entries = [
+                ['if', 'isolation_forest', ['scikit-learn'], `${status.isolation_forest.normal_samples}/${status.isolation_forest.required_normal_samples} reviewed Normal samples`],
+                ['gru', 'gru', ['scikit-learn', 'torch'], `${status.gru.sequence_windows}/${status.gru.required_sequence_windows} sequence windows; window length ${status.gru.sequence_length}`],
+                ['xgb', 'xgboost', ['scikit-learn', 'xgboost'], `Needs at least ${status.xgboost.required_samples_per_class} reviewed samples in two classes`],
+            ];
+            entries.forEach(([shortName, key, required, detail]) => {
+                const model = status.models?.[key];
+                const state = modelReadinessText(status, key, required);
+                document.querySelector(`#${shortName}-model-state`).textContent = state;
+                document.querySelector(`#${shortName}-model-detail`).textContent = model?.state === 'trained'
+                    ? Object.entries(model).filter(([name]) => name !== 'state').map(([name, value]) => `${name.replaceAll('_', ' ')}: ${value}`).join(' | ')
+                    : detail;
+            });
+            document.querySelector('#train-models-button').disabled = false;
+        }
+
+        function modelOutputText(result, modelName) {
+            if (!result || result.state === 'not_trained') return 'Not trained';
+            if (result.state === 'not_enough_history') return `Needs ${result.required_samples} samples`;
+            if (result.state === 'retrain_required') return 'Retrain model';
+            if (result.state !== 'ready') return result.reason || result.state;
+            if (modelName === 'isolation_forest') return `${result.result} (score ${result.anomaly_score})`;
+            if (modelName === 'gru') return `${result.next_latency_ms} ms; ${result.next_packet_loss_percent}% loss; reachability ${Math.round(result.next_reachability_probability * 100)}%`;
+            return `${result.condition} (${Math.round(result.confidence * 100)}%)`;
+        }
+
+        function riskOutputText(result) {
+            if (!result || result.state !== 'ready') return modelOutputText(result, 'gru');
+            const risks = result.risk_indicators || {};
+            return `Bottleneck: ${risks.bottleneck || 'N/A'}; congestion: ${risks.congestion || 'N/A'}; failure: ${risks.failure || 'N/A'}`;
+        }
+
+        function renderMlInsights(devices) {
+            const body = document.querySelector('#ml-insight-rows');
+            body.innerHTML = devices.map((device) => `<tr><td>${escapeHtml(device.device_name)}<br><small>${escapeHtml(device.target)}</small></td><td>${device.current.online ? `${device.current.latency_median_ms ?? '-'} ms` : 'Unreachable'}<br><small>${device.current.packet_loss}% loss</small></td><td>${escapeHtml(modelOutputText(device.isolation_forest, 'isolation_forest'))}</td><td>${escapeHtml(modelOutputText(device.gru, 'gru'))}</td><td>${escapeHtml(modelOutputText(device.xgboost, 'xgboost'))}</td><td>${escapeHtml(riskOutputText(device.gru))}</td></tr>`).join('') || '<tr><td colspan="6">No valid ping samples yet.</td></tr>';
+        }
+
+        function renderNetworkReferences(data) {
+            const referenceRows = [
+                data.gateway || {name: 'Local gateway', target: 'Not detected', sample_count: 0, online: null},
+                data.external || {name: 'External reference', target: data.external_reference_target, sample_count: 0, online: null},
+            ];
+            document.querySelector('#reference-rows').innerHTML = referenceRows.map((reference) => `<tr><td>${escapeHtml(reference.name)}</td><td>${escapeHtml(reference.target)}</td><td>${reference.sample_count ? reference.online ? 'Responding' : 'No ping reply' : 'Not checked'}</td><td>${reference.packet_loss_percent == null ? '-' : `${reference.packet_loss_percent}% (${reference.sample_count} samples)`}</td><td>${reference.latency_median_ms == null ? '-' : `${reference.latency_median_ms} ms`}</td><td>${reference.latency_variation_ms == null ? '-' : `${reference.latency_variation_ms} ms`}</td></tr>`).join('');
+            document.querySelector('#reference-device-rows').innerHTML = data.devices.map((device) => `<tr><td>${escapeHtml(device.target)}</td><td>${device.packet_loss_percent == null ? '-' : `${device.packet_loss_percent}% (${device.sample_count} samples)`}</td><td>${device.latency_median_ms == null ? '-' : `${device.latency_median_ms} ms`}</td><td>${device.latency_variation_ms == null ? '-' : `${device.latency_variation_ms} ms`}</td><td>${escapeHtml(device.comparison)}</td></tr>`).join('') || '<tr><td colspan="5">No monitored PC samples yet.</td></tr>';
+            const setting = document.querySelector('#external-reference-ip');
+            if (document.activeElement !== setting) setting.value = data.external_reference_target || '';
+        }
+
+        async function pollNetworkReferences(button) {
+            button.disabled = true;
+            document.querySelector('#ml-action-status').textContent = 'Pinging gateway and external reference...';
+            try {
+                const data = await requestJson('/api/network-references/poll', {method: 'POST'});
+                renderNetworkReferences(data);
+                document.querySelector('#ml-action-status').textContent = 'Reference samples updated.';
+            } catch (error) { document.querySelector('#ml-action-status').textContent = error.message; }
+            finally { button.disabled = false; }
+        }
+
+        async function saveExternalReference() {
+            const input = document.querySelector('#external-reference-ip');
+            const status = document.querySelector('#reference-setting-status');
+            try {
+                const result = await requestJson('/api/settings/external-reference', {method: 'PATCH', headers: {'Content-Type': 'application/json'}, body: JSON.stringify({target: input.value})});
+                input.value = result.target;
+                status.textContent = 'External reference saved.';
+                await refreshMlPanel();
+            } catch (error) { status.textContent = error.message; }
+        }
+
+        async function loadExternalReferenceSetting() {
+            try {
+                const data = await requestJson('/api/network-references');
+                renderNetworkReferences(data);
+            } catch (error) { document.querySelector('#reference-setting-status').textContent = error.message; }
+        }
+
+        function renderMlRecommendations(devices) {
+            const body = document.querySelector('#ml-recommendation-rows');
+            const rows = devices.flatMap((device) => device.suggestions.map((suggestion) => `<tr><td>${escapeHtml(device.device_name)}<br><small>${escapeHtml(device.target)}</small></td><td>${escapeHtml(suggestion.model_sources.join(', '))}</td><td>${escapeHtml(suggestion.evidence.join(' '))}</td><td>${escapeHtml(suggestion.action)}</td><td><button class="range-button" type="button" data-select-telemetry="${device.telemetry_id}" data-select-suggestion="${escapeHtml(suggestion.id)}">Select</button></td></tr>`));
+            body.innerHTML = rows.join('') || '<tr><td colspan="5">No suggestions available.</td></tr>';
+        }
+
+        function renderRecommendationFeedback(feedback) {
+            const outcomes = [['resolved', 'Resolved'], ['not_resolved', 'Not resolved'], ['unknown', 'Unknown']];
+            const findings = ['', 'Shared path degradation', 'Device-specific issue', 'ICMP blocked', 'No issue found', 'Other / unknown'];
+            const body = document.querySelector('#ml-feedback-rows');
+            body.innerHTML = feedback.map((item) => `<tr><td>${escapeHtml(item.selected_at)}</td><td>${escapeHtml(item.device_name)}<br><small>${escapeHtml(item.target)}</small></td><td>${escapeHtml(item.model_sources.join(', '))}<br><small>${escapeHtml(item.evidence.join(' '))}</small></td><td>${escapeHtml(item.suggested_action)}</td><td><select class="ml-feedback-control" aria-label="Outcome for selected action ${item.id}"><option value="">Record outcome</option>${outcomes.map(([value, label]) => `<option value="${value}" ${item.outcome === value ? 'selected' : ''}>${label}</option>`).join('')}</select></td><td><select class="ml-feedback-control" aria-label="Verified finding for selected action ${item.id}">${findings.map((value) => `<option value="${escapeAttribute(value)}" ${item.verified_finding === value ? 'selected' : ''}>${escapeHtml(value || 'Not verified')}</option>`).join('')}</select></td><td><input class="ml-feedback-control ml-feedback-notes" type="text" maxlength="1000" value="${escapeAttribute(item.notes)}" aria-label="Notes for selected action ${item.id}"></td><td><button class="range-button" type="button" onclick="saveMlRecommendationOutcome(${item.id}, this)">Save</button></td></tr>`).join('') || '<tr><td colspan="8">No selected suggestions yet.</td></tr>';
+        }
+
+        function renderMlLabels(data) {
+            const body = document.querySelector('#ml-label-rows');
+            const labels = data.labels;
+            body.innerHTML = data.samples.map((sample) => `<tr><td>${escapeHtml(sample.recorded_at)}</td><td>${escapeHtml(sample.device_name)}<br><small>${escapeHtml(sample.target)}</small></td><td>${sample.online ? `${sample.latency_median_ms ?? sample.latency_ms ?? '-'} ms` : 'Unreachable'}</td><td>${sample.packet_loss}%</td><td><select class="ml-label-select" aria-label="Condition label for sample ${sample.id}"><option value="">Choose label</option>${labels.map((label) => `<option value="${escapeHtml(label)}" ${sample.condition_label === label ? 'selected' : ''}>${escapeHtml(label)}</option>`).join('')}</select></td><td><button class="range-button" type="button" onclick="saveMlLabel(${sample.id}, this)">Save</button></td></tr>`).join('') || '<tr><td colspan="6">No valid ping samples available to label.</td></tr>';
+        }
+
+        async function refreshMlPanel() {
+            try {
+                const [status, labelData, insights, feedback, references] = await Promise.all([
+                    requestJson('/api/ml/status'), requestJson('/api/ml/labels'), requestJson('/api/ml/insights'), requestJson('/api/ml/recommendation-feedback'), requestJson('/api/network-references'),
+                ]);
+                updateModelReadiness(status);
+                renderMlLabels(labelData);
+                renderMlInsights(insights.devices);
+                renderMlRecommendations(insights.devices);
+                renderRecommendationFeedback(feedback.feedback);
+                renderNetworkReferences(references);
+            } catch (error) {
+                document.querySelector('#ml-action-status').textContent = error.message;
+            }
+        }
+
+        async function saveMlLabel(telemetryId, button) {
+            const label = button.closest('tr').querySelector('select').value;
+            if (!label) { document.querySelector('#ml-action-status').textContent = 'Choose a condition label first.'; return; }
+            try {
+                await requestJson(`/api/ml/labels/${telemetryId}`, {method: 'PUT', headers: {'Content-Type': 'application/json'}, body: JSON.stringify({label})});
+                document.querySelector('#ml-action-status').textContent = 'Reviewed label saved.';
+                await refreshMlPanel();
+            } catch (error) { document.querySelector('#ml-action-status').textContent = error.message; }
+        }
+
+        async function selectMlRecommendation(telemetryId, suggestionId, button) {
+            button.disabled = true;
+            try {
+                await requestJson(`/api/ml/recommendation-feedback/${telemetryId}`, {method: 'POST', headers: {'Content-Type': 'application/json'}, body: JSON.stringify({suggestion_id: suggestionId})});
+                document.querySelector('#ml-action-status').textContent = 'Selection recorded. Perform the check, then record its outcome below.';
+                await refreshMlPanel();
+            } catch (error) { document.querySelector('#ml-action-status').textContent = error.message; }
+            finally { button.disabled = false; }
+        }
+
+        async function saveMlRecommendationOutcome(feedbackId, button) {
+            const row = button.closest('tr');
+            const controls = row.querySelectorAll('select');
+            const outcome = controls[0].value;
+            if (!outcome) { document.querySelector('#ml-action-status').textContent = 'Choose an outcome before saving.'; return; }
+            try {
+                await requestJson(`/api/ml/recommendation-feedback/${feedbackId}`, {method: 'PATCH', headers: {'Content-Type': 'application/json'}, body: JSON.stringify({outcome, verified_finding: controls[1].value, notes: row.querySelector('.ml-feedback-notes').value})});
+                document.querySelector('#ml-action-status').textContent = 'Action outcome saved for later review.';
+                await refreshMlPanel();
+            } catch (error) { document.querySelector('#ml-action-status').textContent = error.message; }
+        }
+
+        async function trainMlModels(button) {
+            button.disabled = true;
+            document.querySelector('#ml-action-status').textContent = 'Training models that meet their data requirements...';
+            try {
+                const result = await requestJson('/api/ml/train', {method: 'POST'});
+                const summary = Object.entries(result.models).map(([name, value]) => `${name.replaceAll('_', ' ')}: ${value.state}`).join('; ');
+                document.querySelector('#ml-action-status').textContent = summary;
+                await refreshMlPanel();
+                document.querySelector('#ml-action-status').textContent = summary;
+            } catch (error) { document.querySelector('#ml-action-status').textContent = error.message; }
+            finally { button.disabled = false; }
+        }
+
+        async function pollNow(button) {
+            button.disabled = true;
+            try { await requestJson('/api/monitor-now', {method: 'POST'}); await refreshStatus(); }
+            catch (error) { setStatus(error.message); }
+            finally { button.disabled = false; }
+        }
+
+        function drawPingChart() {
+            const canvas = document.querySelector('#ping-chart');
+            if (!canvas || document.querySelector('[data-panel="monitor"][hidden]')) return;
             const width = canvas.clientWidth || 600;
             const height = 220;
             const ratio = window.devicePixelRatio || 1;
@@ -151,184 +392,61 @@
             const context = canvas.getContext('2d');
             context.scale(ratio, ratio);
             context.clearRect(0, 0, width, height);
-            const padding = {top: 18, right: 18, bottom: 28, left: 38};
-            const allValues = values.concat(forecastValues || []).filter((value) => Number.isFinite(value));
-            const maximum = Math.max(...allValues, 10);
-            const minimum = Math.min(...allValues, 0);
-            const range = Math.max(maximum - minimum, 1);
-            const x = (index, count) => padding.left + (index / Math.max(count - 1, 1)) * (width - padding.left - padding.right);
-            const y = (value) => height - padding.bottom - ((value - minimum) / range) * (height - padding.top - padding.bottom);
+            const target = document.querySelector('#chart-device').value;
+            const points = monitorHistory.filter((sample) => sample.device === target && sample.latency != null).slice(-100);
+            const padding = {top: 18, right: 18, bottom: 28, left: 42};
+            const maximum = Math.max(10, ...points.map((point) => point.latency));
+            const x = (index) => padding.left + index / Math.max(points.length - 1, 1) * (width - padding.left - padding.right);
+            const y = (value) => height - padding.bottom - value / maximum * (height - padding.top - padding.bottom);
             context.strokeStyle = getComputedStyle(document.body).getPropertyValue('--chart-grid') || '#dce6ee';
-            context.lineWidth = 1;
-            for (let index = 0; index < 4; index += 1) {
-                const lineY = padding.top + index * ((height - padding.top - padding.bottom) / 3);
-                context.beginPath(); context.moveTo(padding.left, lineY); context.lineTo(width - padding.right, lineY); context.stroke();
-            }
-            const drawLine = (points, color, dashed) => {
-                if (!points.length) return;
-                context.beginPath(); context.setLineDash(dashed ? [6, 5] : []); context.strokeStyle = color; context.lineWidth = 2.5;
-                points.forEach((value, index) => index ? context.lineTo(x(index, points.length), y(value)) : context.moveTo(x(index, points.length), y(value)));
-                context.stroke(); context.setLineDash([]);
-            };
-            drawLine(values, '#1976c9', false);
-            if (forecastValues && forecastValues.length) drawLine(forecastValues, '#e08a24', true);
-            if (values.length > 1) {
-                const markerX = padding.left + ((phase % 1) * (width - padding.left - padding.right));
-                    context.beginPath();
-                    context.setLineDash([3, 5]);
-                    context.strokeStyle = '#e08a24';
-                    context.lineWidth = 1;
-                    context.moveTo(markerX, padding.top);
-                    context.lineTo(markerX, height - padding.bottom);
-                    context.stroke();
-                    context.setLineDash([]);
-                context.beginPath();
-                context.arc(markerX, y(values[Math.min(values.length - 1, Math.floor((phase % 1) * values.length))]), 4, 0, Math.PI * 2);
-                context.fillStyle = forecastValues && forecastValues.length ? '#e08a24' : '#1976c9';
-                context.fill();
-            }
-            context.fillStyle = getComputedStyle(document.body).color;
-            context.font = '12px Segoe UI';
-            context.fillText(`${Math.round(maximum)} ${unit}`, 4, padding.top + 4);
-            context.fillText(`${Math.round(minimum)} ${unit}`, 4, height - padding.bottom + 4);
-        }
-
-        function drawThroughputChart() {
-            const canvas = document.getElementById('throughput-chart');
-            if (!canvas) return;
-            const width = canvas.clientWidth || 600;
-            const height = 220;
-            const ratio = window.devicePixelRatio || 1;
-            canvas.width = width * ratio;
-            canvas.height = height * ratio;
-            const context = canvas.getContext('2d');
-            context.scale(ratio, ratio);
-            context.clearRect(0, 0, width, height);
-            const padding = {top: 18, right: 18, bottom: 28, left: 48};
-            const upload = monitorHistory.map((item) => Number(item.send)).filter(Number.isFinite);
-            const download = monitorHistory.map((item) => Number(item.receive)).filter(Number.isFinite);
-            const allValues = upload.concat(download);
-            const maximum = Math.max(...allValues, 10);
-            const range = Math.max(maximum, 1);
-            const x = (index, count) => padding.left + (index / Math.max(count - 1, 1)) * (width - padding.left - padding.right);
-            const y = (value) => height - padding.bottom - (value / range) * (height - padding.top - padding.bottom);
-            context.strokeStyle = getComputedStyle(document.body).getPropertyValue('--chart-grid') || '#dce6ee';
-            context.lineWidth = 1;
-            for (let index = 0; index < 4; index += 1) {
-                const lineY = padding.top + index * ((height - padding.top - padding.bottom) / 3);
-                context.beginPath(); context.moveTo(padding.left, lineY); context.lineTo(width - padding.right, lineY); context.stroke();
-            }
-            const drawSeries = (values, color) => {
-                if (!values.length) return;
-                context.beginPath(); context.strokeStyle = color; context.lineWidth = 2.5;
-                values.forEach((value, index) => index ? context.lineTo(x(index, values.length), y(value)) : context.moveTo(x(index, values.length), y(value)));
+            for (let index = 0; index < 4; index += 1) { const lineY = padding.top + index * (height - padding.top - padding.bottom) / 3; context.beginPath(); context.moveTo(padding.left, lineY); context.lineTo(width - padding.right, lineY); context.stroke(); }
+            if (points.length) {
+                context.beginPath(); context.strokeStyle = '#1976c9'; context.lineWidth = 2.5;
+                points.forEach((point, index) => index ? context.lineTo(x(index), y(point.latency)) : context.moveTo(x(index), y(point.latency)));
                 context.stroke();
-            };
-            drawSeries(upload, '#e07825');
-            drawSeries(download, '#1976c9');
-            const markerX = padding.left + ((chartPhase % 1) * (width - padding.left - padding.right));
-            context.beginPath(); context.setLineDash([3, 5]); context.strokeStyle = '#8999a8'; context.lineWidth = 1; context.moveTo(markerX, padding.top); context.lineTo(markerX, height - padding.bottom); context.stroke(); context.setLineDash([]);
+            }
             context.fillStyle = getComputedStyle(document.body).color;
             context.font = '12px Segoe UI';
-            context.fillText(`${Math.round(maximum)} Kbps`, 4, padding.top + 4);
-            context.fillText('0 Kbps', 4, height - padding.bottom + 4);
+            context.fillText(`${Math.round(maximum)} ms`, 4, padding.top + 4);
+            context.fillText('0 ms', 4, height - padding.bottom + 4);
+            if (!points.length) context.fillText('No ping samples yet', padding.left + 8, height / 2);
         }
 
-        function drawMonitorCharts() {
-            const throughputValues = monitorHistory.map((item) => item.throughput).filter((value) => Number.isFinite(value));
-            const pingValues = monitorHistory.map((item) => item.latency).filter((value) => Number.isFinite(value));
-            const forecastStart = pingValues.length ? pingValues[pingValues.length - 1] : 0;
-            const forecastValues = pingValues.length ? [forecastStart, forecastStart * 1.05, forecastStart * 1.1, forecastStart * 1.08] : [];
-            drawThroughputChart();
-            drawChart('prediction-chart', pingValues.slice(-6), forecastValues, chartPhase, 'ms');
-        }
+        document.querySelectorAll('.range-button[data-hours]').forEach((button) => button.addEventListener('click', () => {
+            const cutoff = Date.now() - Number(button.dataset.hours) * 3600000;
+            document.querySelectorAll('.range-button[data-hours]').forEach((item) => item.classList.toggle('active', item === button));
+            document.querySelectorAll('#reports-table tbody tr[data-recorded-at]').forEach((row) => { row.hidden = Date.parse(row.dataset.recordedAt) < cutoff; });
+        }));
 
-        function animateCharts() {
-            chartPhase = (chartPhase + 0.004) % 1;
-            if (!document.querySelector('[data-panel="monitor"][hidden]')) drawMonitorCharts();
-            window.requestAnimationFrame(animateCharts);
-        }
-
-        let livePollInProgress = false;
-
-        function refreshLiveCharts() {
-            if (livePollInProgress || document.querySelector('[data-panel="monitor"][hidden]')) return;
-            livePollInProgress = true;
-            fetch('/api/monitor-now', {method: 'POST'})
-                .then((response) => response.json())
-                .then((payload) => {
-                    payload.samples.forEach((sample) => {
-                        monitorHistory.push({time: sample.recorded_at, latency: sample.latency_ms, throughput: sample.throughput_kbps, send: sample.send_kbps, receive: sample.receive_kbps, online: sample.online, packet_loss: sample.packet_loss});
-                    });
-                    while (monitorHistory.length > 100) monitorHistory.shift();
-                    drawMonitorCharts();
-                })
-                .catch(() => {})
-                .finally(() => { livePollInProgress = false; });
-        }
-
-        function refreshThroughputChart() {
-            if (document.querySelector('[data-panel="monitor"][hidden]')) return;
-            fetch('/api/throughput')
-                .then((response) => response.json())
-                .then((throughput) => {
-                    monitorHistory.push({time: new Date().toISOString(), latency: null, throughput: throughput.throughput_kbps, send: throughput.send_kbps, receive: throughput.receive_kbps, online: true, packet_loss: 0});
-                    while (monitorHistory.length > 180) monitorHistory.shift();
-                    drawMonitorCharts();
-                })
-                .catch(() => {});
-        }
-
-        document.querySelectorAll('.range-button').forEach((button) => {
-            button.addEventListener('click', () => {
-                const hours = Number(button.dataset.hours);
-                const cutoff = Date.now() - hours * 60 * 60 * 1000;
-                document.querySelectorAll('.range-button').forEach((item) => item.classList.toggle('active', item === button));
-                document.querySelectorAll('#reports-table tbody tr').forEach((row) => {
-                    row.hidden = Date.parse(row.dataset.recordedAt) < cutoff;
-                });
-            });
-        });
-
-        const savedTheme = localStorage.getItem('network-monitor-theme');
         const themeToggle = document.querySelector('#theme-toggle');
-        const themeLabel = document.querySelector('#theme-label');
-
         function setTheme(isDark) {
             document.body.classList.toggle('dark-mode', isDark);
             themeToggle.checked = isDark;
-            themeLabel.textContent = isDark ? 'Dark mode' : 'Light mode';
+            document.querySelector('#theme-label').textContent = isDark ? 'Dark mode' : 'Light mode';
             localStorage.setItem('network-monitor-theme', isDark ? 'dark' : 'light');
         }
-
-        setTheme(savedTheme === 'dark');
-        themeToggle.addEventListener('change', () => setTheme(themeToggle.checked));
+        setTheme(localStorage.getItem('network-monitor-theme') === 'dark');
+        themeToggle.addEventListener('change', () => { setTheme(themeToggle.checked); drawPingChart(); });
 
         const navItems = document.querySelectorAll('.nav-item');
         const panels = document.querySelectorAll('[data-panel]');
+        navItems.forEach((item) => item.addEventListener('click', () => {
+            navItems.forEach((navItem) => { const active = navItem === item; navItem.classList.toggle('active', active); if (active) navItem.setAttribute('aria-current', 'page'); else navItem.removeAttribute('aria-current'); });
+            panels.forEach((panel) => { const visible = panel.dataset.panel === item.dataset.view; panel.hidden = !visible; panel.classList.toggle('active', visible); });
+            if (item.dataset.view === 'monitor') { drawPingChart(); refreshStatus(); }
+            if (item.dataset.view === 'ml-insights') refreshMlPanel();
+            if (item.dataset.view === 'settings') loadExternalReferenceSetting();
+        }));
 
-        navItems.forEach((item) => {
-            item.addEventListener('click', () => {
-                const view = item.dataset.view;
-                navItems.forEach((navItem) => {
-                    const isActive = navItem === item;
-                    navItem.classList.toggle('active', isActive);
-                    if (isActive) navItem.setAttribute('aria-current', 'page');
-                    else navItem.removeAttribute('aria-current');
-                });
-                panels.forEach((panel) => {
-                    const isVisible = panel.dataset.panel === view;
-                    panel.hidden = !isVisible;
-                    panel.classList.toggle('active', isVisible);
-                });
-                if (view === 'monitor') window.setTimeout(drawMonitorCharts, 0);
-            });
+        document.querySelector('#ml-recommendation-rows').addEventListener('click', (event) => {
+            const button = event.target.closest('[data-select-suggestion]');
+            if (button) selectMlRecommendation(Number(button.dataset.selectTelemetry), button.dataset.selectSuggestion, button);
         });
 
-        window.addEventListener('resize', drawMonitorCharts);
-        window.setInterval(refreshLiveCharts, 5000);
-        window.setInterval(refreshThroughputChart, 1000);
-        window.requestAnimationFrame(animateCharts);
+        window.addEventListener('resize', drawPingChart);
+        requestJson('/api/devices').then((data) => { document.querySelector('#subnet-input').value = data.local_network.suggested_subnet; }).catch((error) => setStatus(error.message));
+        refreshStatus();
+        window.setInterval(refreshStatus, 5000);
     </script>
 </body>
 </html>
