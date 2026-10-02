@@ -7,7 +7,7 @@ import ipaddress
 from flask import Flask, jsonify, make_response, render_template, request
 from dashboard import get_dashboard_data
 from ml_models import CONDITION_LABELS, get_ml_insights, get_training_readiness, is_valid_ping_sample, train_models
-from monitoring import add_monitored_device, discover_hosts, get_local_network, get_ml_labeling_samples, get_ml_training_data, get_monitoring_data, get_network_reference_samples, get_network_reference_status, get_recommendation_feedback, poll_network_references, poll_once, remove_monitored_device, save_condition_label, save_external_reference_target, save_recommendation_outcome, save_recommendation_selection, start_monitoring, update_monitored_device
+from monitoring import add_monitored_device, discover_hosts, get_available_databases, get_building_name, get_local_network, get_ml_labeling_samples, get_ml_training_data, get_monitoring_data, get_network_reference_samples, get_network_reference_status, get_recommendation_feedback, initialize_database, poll_network_references, poll_once, remove_monitored_device, save_building_name, save_condition_label, save_external_reference_target, save_recommendation_outcome, save_recommendation_selection, start_monitoring, stop_monitoring, update_monitored_device
 
 app = Flask(__name__, static_folder="static", template_folder="templates")
 start_monitoring()
@@ -16,6 +16,7 @@ start_monitoring()
 @app.route("/")
 def index():
     data = get_dashboard_data()
+    data["building_name"] = get_building_name()
     return render_template("dashboard.html", **data)
 
 
@@ -73,6 +74,52 @@ def update_external_reference():
     except (AttributeError, TypeError, ValueError) as error:
         return jsonify({"error": str(error)}), 400
     return jsonify({"ok": True, "target": target})
+
+
+@app.get("/api/settings/building-name")
+def get_settings_building_name():
+    return jsonify({"building_name": get_building_name()})
+
+
+@app.patch("/api/settings/building-name")
+def update_building_name():
+    payload = request.get_json(silent=True) or {}
+    try:
+        building_name = save_building_name(payload.get("building_name", ""))
+        initialize_database()
+    except (AttributeError, TypeError, ValueError) as error:
+        return jsonify({"error": str(error)}), 400
+    return jsonify({"ok": True, "building_name": building_name})
+
+
+@app.get("/api/settings/databases")
+def list_databases():
+    current_building = get_building_name()
+    databases = get_available_databases()
+    return jsonify({"databases": databases, "current_building": current_building})
+
+
+@app.post("/api/settings/databases/select")
+def select_database():
+    payload = request.get_json(silent=True) or {}
+    building_name = payload.get("building_name", "")
+    if not building_name:
+        return jsonify({"error": "Building name is required"}), 400
+    try:
+        saved_name = save_building_name(building_name)
+    except (AttributeError, TypeError, ValueError) as error:
+        return jsonify({"error": str(error)}), 400
+    return jsonify({"ok": True, "building_name": saved_name, "message": f"Switched to {saved_name} database"})
+
+
+@app.post("/api/control/restart-monitoring")
+def restart_monitoring():
+    try:
+        stop_monitoring()
+        start_monitoring()
+        return jsonify({"ok": True, "message": "Monitoring service restarted successfully!"})
+    except Exception as error:
+        return jsonify({"error": str(error)}), 500
 
 
 @app.get("/api/ml/insights")
@@ -184,7 +231,8 @@ def discover():
     payload = request.get_json(silent=True) or {}
     try:
         subnet = payload.get("subnet") or get_local_network()["subnet"]
-        return jsonify({"hosts": discover_hosts(subnet)})
+        limit = payload.get("limit", 0)
+        return jsonify({"hosts": discover_hosts(subnet, limit)})
     except (ValueError, ipaddress.AddressValueError) as error:
         return jsonify({"error": str(error)}), 400
 

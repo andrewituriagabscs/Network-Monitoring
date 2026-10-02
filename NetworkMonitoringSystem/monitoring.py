@@ -22,8 +22,50 @@ from typing import Any
 import psutil
 
 BASE_DIR = Path(__file__).resolve().parent
-DATABASE_PATH = BASE_DIR / "monitoring.db"
 POLL_INTERVAL_SECONDS = int(os.getenv("MONITORING_POLL_SECONDS", "30"))
+
+# MAC OUI database for phone/device detection
+PHONE_MANUFACTURERS = {
+    "00:1a:2b", "00:1a:2d", "00:1a:5e", "00:1d:4f", "00:25:86", "00:50:f2",  # Apple
+    "b0:35:9f", "5c:f3:70", "00:1e:52", "9c:a6:15", "04:fd:55", "74:33:c3",  # Samsung
+    "e4:54:e8", "54:6a:5c", "e8:ba:70",  # Huawei
+    "1e:10:3d", "90:a2:da", "d0:76:d0",  # OnePlus
+    "8c:72:f8", "00:aa:33",  # Xiaomi
+    "bc:f5:ac", "28:11:95",  # LG
+    "00:0d:93", "a4:ae:12",  # Google Pixel
+    "5c:6d:7e", "00:e0:4c",  # Motorola
+    "7c:7a:91", "a4:2b:8c",  # HTC
+    "f4:f1:e0", "84:89:ad",  # Sony
+    "08:62:66", "e8:99:c4",  # Amazon
+}
+
+
+def _get_database_path() -> Path:
+    """Get the database path based on the building name."""
+    from pathlib import Path
+    # Create a temporary connection to get building name
+    temp_db = BASE_DIR / "monitoring.db"
+    if temp_db.exists():
+        try:
+            temp_conn = sqlite3.connect(temp_db, timeout=10)
+            temp_conn.row_factory = sqlite3.Row
+            result = temp_conn.execute(
+                "SELECT value FROM application_settings WHERE key = 'building_name' LIMIT 1"
+            ).fetchone()
+            temp_conn.close()
+            if result:
+                building_name = str(result["value"]).replace(" ", "_").replace("/", "_")
+                return BASE_DIR / f"monitoring_{building_name}.db"
+        except Exception:
+            pass
+    return temp_db
+
+
+@property
+def DATABASE_PATH():
+    return _get_database_path()
+
+DATABASE_PATH = _get_database_path()
 
 _db_lock = threading.Lock()
 _reference_poll_lock = threading.Lock()
@@ -36,7 +78,8 @@ def _utc_now() -> str:
 
 
 def _connect() -> sqlite3.Connection:
-    connection = sqlite3.connect(DATABASE_PATH, timeout=10)
+    db_path = _get_database_path()
+    connection = sqlite3.connect(db_path, timeout=10)
     connection.row_factory = sqlite3.Row
     connection.execute("PRAGMA journal_mode=WAL")
     return connection
@@ -166,6 +209,13 @@ def initialize_database() -> None:
         for column, declaration in additions.items():
             if column not in columns:
                 connection.execute(f"ALTER TABLE telemetry ADD COLUMN {column} {declaration}")
+        # Add mac_address column to monitored_devices if not exists
+        monitored_columns = {row[1] for row in connection.execute("PRAGMA table_info(monitored_devices)")}
+        if "mac_address" not in monitored_columns:
+            connection.execute("ALTER TABLE monitored_devices ADD COLUMN mac_address TEXT DEFAULT ''")
+        # Add device_type column to monitored_devices if not exists
+        if "device_type" not in monitored_columns:
+            connection.execute("ALTER TABLE monitored_devices ADD COLUMN device_type TEXT DEFAULT 'pc'")
 
 
 def _ping(target: str, count: int = 5) -> dict[str, Any]:
@@ -240,19 +290,118 @@ def get_local_network() -> dict[str, str]:
         stats = psutil.net_if_stats().get(interface)
         if not stats or not stats.isup:
             continue
+        lowered = interface.lower()
+        # Explicitly skip known virtual/hypervisor adapters
+        if any(token in lowered for token in ("vethernet", "hyper-v", "virtual", "docker", "wsl", "vmware", "vbox", "loopback")):
+            continue
         for address in addresses:
             if address.family.name != "AF_INET" or address.address.startswith("127.") or not address.netmask:
                 continue
             network = ipaddress.ip_network(f"{address.address}/{address.netmask}", strict=False)
-            lowered = interface.lower()
-            virtual = any(token in lowered for token in ("vpn", "virtual", "loopback", "docker", "wsl", "vmware", "hyper-v", "tunnel", "radmin"))
-            preferred = any(token in lowered for token in ("wi-fi", "wifi", "wireless", "wlan", "ethernet", "eth", "lan"))
+            # Rank interfaces: prefer physical > vpn > others
+            is_wifi = any(token in lowered for token in ("wi-fi", "wifi", "wireless", "wlan"))
+            is_ethernet = any(token in lowered for token in ("ethernet", "eth", "lan"))
+            is_vpn = "vpn" in lowered
+            is_tunnel = "tunnel" in lowered
+            is_radmin = "radmin" in lowered
+            # Ranking: lower is better (wifi=0, ethernet=1, vpn=2, tunnel=3, radmin=4, other=5)
+            if is_wifi:
+                rank = 0
+            elif is_ethernet:
+                rank = 1
+            elif is_vpn:
+                rank = 2
+            elif is_tunnel:
+                rank = 3
+            elif is_radmin:
+                rank = 4
+            else:
+                rank = 5
             suggested = network if network.num_addresses <= 256 else ipaddress.ip_network(f"{address.address}/24", strict=False)
-            candidates.append((virtual, not preferred, interface, address.address, network, suggested))
+            candidates.append((rank, interface, address.address, network, suggested))
     if not candidates:
         raise ValueError("Could not determine an active local IPv4 subnet")
-    virtual, _, interface, address, network, suggested = sorted(candidates)[0]
-    return {"interface": interface, "address": address, "subnet": str(network), "suggested_subnet": str(suggested), "virtual": str(virtual).lower()}
+    _, interface, address, network, suggested = sorted(candidates)[0]
+    return {"interface": interface, "address": address, "subnet": str(network), "suggested_subnet": str(suggested), "virtual": "false"}
+
+
+def _get_mac_address(target: str) -> str:
+    """Get MAC address for a given IP address using ARP cache."""
+    try:
+        if platform.system() == "Windows":
+            result = subprocess.run(
+                ["arp", "-a", target],
+                capture_output=True,
+                text=True,
+                timeout=2,
+                check=False,
+            )
+            # Parse Windows arp output: look for MAC in format XX-XX-XX-XX-XX-XX
+            match = re.search(r"([0-9a-f]{2}(?:-[0-9a-f]{2}){5})", result.stdout, re.IGNORECASE)
+            if match:
+                return match.group(1).lower()
+        else:
+            result = subprocess.run(
+                ["arp", "-n", target],
+                capture_output=True,
+                text=True,
+                timeout=2,
+                check=False,
+            )
+            # Parse Unix arp output: look for MAC in format XX:XX:XX:XX:XX:XX
+            match = re.search(r"([0-9a-f]{2}(?::[0-9a-f]{2}){5})", result.stdout, re.IGNORECASE)
+            if match:
+                return match.group(1).lower()
+    except (OSError, subprocess.SubprocessError):
+        pass
+    return ""
+
+
+def _detect_device_type(mac_address: str) -> str:
+    """Detect device type from MAC address OUI."""
+    if not mac_address:
+        return "unknown"
+    # Normalize MAC to colon format
+    mac_normalized = mac_address.lower().replace("-", ":")
+    # Get OUI (first 3 bytes)
+    oui = ":".join(mac_normalized.split(":")[:3]) if len(mac_normalized.split(":")) >= 3 else ""
+    if oui in PHONE_MANUFACTURERS:
+        return "phone"
+    return "pc"
+
+
+def _resolve_hostname(target: str) -> str:
+    """Resolve hostname from IP address using reverse DNS or NetBIOS."""
+    try:
+        # Try standard reverse DNS first
+        hostname, _, _ = socket.gethostbyaddr(target)
+        if hostname and hostname != target:
+            return hostname.split('.')[0]  # Return just the hostname without FQDN
+    except (socket.herror, socket.timeout, OSError):
+        pass
+    
+    # Try Windows NetBIOS lookup for local network
+    if platform.system() == "Windows":
+        try:
+            result = subprocess.run(
+                ["nbtstat", "-A", target],
+                capture_output=True,
+                text=True,
+                timeout=2,
+                check=False,
+            )
+            # Parse nbtstat output for computer name (usually first entry with <00> or <20>)
+            for line in result.stdout.split('\n'):
+                if '<20>' in line or '<00>' in line:
+                    parts = line.split()
+                    if parts:
+                        name = parts[0].strip()
+                        if name and name != target:
+                            return name
+        except (OSError, subprocess.TimeoutExpired):
+            pass
+    
+    return target
 
 
 def _get_default_gateway(local_address: str, interface: str) -> str | None:
@@ -469,7 +618,7 @@ def get_network_reference_samples(limit: int = 2000) -> list[dict[str, Any]]:
     return [_row_dict(row) for row in reversed(rows)]
 
 
-def discover_hosts(subnet: str) -> list[dict[str, str]]:
+def discover_hosts(subnet: str, limit: int = 0) -> list[dict[str, str]]:
     local_network = ipaddress.ip_network(get_local_network()["subnet"], strict=False)
     requested_network = ipaddress.ip_network(subnet, strict=False)
     if requested_network.version != 4 or not requested_network.subnet_of(local_network):
@@ -478,16 +627,21 @@ def discover_hosts(subnet: str) -> list[dict[str, str]]:
         raise ValueError("Choose a subnet with no more than 256 addresses")
     candidates = [str(address) for address in requested_network.hosts()]
     found = []
+    limit_val = max(1, min(int(limit), 999)) if limit > 0 else len(candidates)
     with ThreadPoolExecutor(max_workers=128) as executor:
         tasks = {executor.submit(_ping, target, 1): target for target in candidates}
         for task in as_completed(tasks):
+            if len(found) >= limit_val:
+                break
             target = tasks[task]
             try:
                 result = task.result()
             except Exception:
                 continue
             if result["online"]:
-                found.append({"name": target, "target": target})
+                mac_addr = _get_mac_address(target)
+                device_type = _detect_device_type(mac_addr)
+                found.append({"name": target, "target": target, "mac_address": mac_addr, "device_type": device_type})
     return sorted(found, key=lambda item: ipaddress.ip_address(item["target"]))
 
 
@@ -501,11 +655,22 @@ def get_monitored_devices() -> list[dict[str, Any]]:
 def add_monitored_device(name: str, target: str) -> dict[str, Any]:
     initialize_database()
     address = ipaddress.ip_address(target)
-    clean_name = name.strip()[:100] or str(address)
+    mac_addr = _get_mac_address(str(address))
+    device_type = _detect_device_type(mac_addr)
+    
+    # Auto-resolve hostname if name is empty or just an IP address
+    clean_name = name.strip()[:100] if name.strip() else ""
+    if not clean_name or clean_name == str(address):
+        resolved_name = _resolve_hostname(str(address))
+        if resolved_name and resolved_name != str(address):
+            clean_name = resolved_name
+        else:
+            clean_name = str(address)
+    
     with _db_lock, _connect() as connection:
         connection.execute(
-            "INSERT INTO monitored_devices (name, target, active, interval_seconds, added_at) VALUES (?, ?, 0, ?, ?) ON CONFLICT(target) DO UPDATE SET name = excluded.name",
-            (clean_name, str(address), POLL_INTERVAL_SECONDS, _utc_now()),
+            "INSERT INTO monitored_devices (name, target, active, interval_seconds, added_at, mac_address, device_type) VALUES (?, ?, 0, ?, ?, ?, ?) ON CONFLICT(target) DO UPDATE SET name = excluded.name, mac_address = excluded.mac_address, device_type = excluded.device_type",
+            (clean_name, str(address), POLL_INTERVAL_SECONDS, _utc_now(), mac_addr, device_type),
         )
         row = connection.execute("SELECT * FROM monitored_devices WHERE target = ?", (str(address),)).fetchone()
     return _row_dict(row)
@@ -806,3 +971,51 @@ def save_recommendation_outcome(
             (outcome, verified_finding, notes.strip()[:1000], _utc_now(), feedback_id),
         )
         return connection.execute("SELECT changes()").fetchone()[0] > 0
+
+
+def get_building_name() -> str:
+    """Get the current building name from application settings."""
+    initialize_database()
+    with _db_lock, _connect() as connection:
+        row = connection.execute(
+            "SELECT value FROM application_settings WHERE key = 'building_name'"
+        ).fetchone()
+    return str(row["value"]) if row else "Unknown Building"
+
+
+def save_building_name(name: str) -> str:
+    """Save the building name to application settings."""
+    clean_name = name.strip()[:100] or "Unknown Building"
+    initialize_database()
+    with _db_lock, _connect() as connection:
+        connection.execute(
+            "INSERT INTO application_settings (key, value) VALUES ('building_name', ?) "
+            "ON CONFLICT(key) DO UPDATE SET value = excluded.value",
+            (clean_name,),
+        )
+    return clean_name
+
+
+def get_available_databases() -> list[dict[str, str]]:
+    """Get list of available databases (monitoring_*.db files)."""
+    databases = []
+    seen_names = set()
+    try:
+        # Check for base monitoring.db
+        if (BASE_DIR / "monitoring.db").exists():
+            databases.append({"name": "Unknown Building", "filename": "monitoring.db", "path": str(BASE_DIR / "monitoring.db")})
+            seen_names.add("Unknown Building")
+        
+        # Check for monitoring_*.db files
+        for db_file in BASE_DIR.glob("monitoring_*.db"):
+            # Extract building name from filename
+            filename = db_file.name  # e.g., "monitoring_Building_1.db"
+            building_name = filename.replace("monitoring_", "").replace(".db", "").replace("_", " ")
+            # Skip duplicates
+            if building_name not in seen_names:
+                databases.append({"name": building_name, "filename": db_file.name, "path": str(db_file)})
+                seen_names.add(building_name)
+    except Exception:
+        pass
+    
+    return sorted(databases, key=lambda x: x["name"])

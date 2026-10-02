@@ -25,7 +25,7 @@
 
         <main class="page">
             <section class="view-panel active" data-panel="dashboard">
-                <header><div><p class="eyebrow">ICMP network status</p><h1>{{ title }}</h1><p>Updated {{ generated_at }}</p></div><button class="refresh-button" type="button" onclick="refreshStatus()">↻ <span>Refresh</span></button></header>
+                <header><div><p class="eyebrow">ICMP network status</p><h1>{{ title }}<small style="font-size: 0.6em; color: #666; display: block; margin-top: 0.25em;">{{ building_name }}</small></h1><p>Updated {{ generated_at }}</p></div><button class="refresh-button" type="button" onclick="refreshStatus()">↻ <span>Refresh</span></button></header>
                 <section class="summary-cards">
                     <div class="card"><h2>Saved PCs</h2><p id="saved-count">{{ summary.total_devices }}</p></div>
                     <div class="card"><h2>Monitoring</h2><p id="active-count">{{ summary.active_devices }}</p></div>
@@ -40,25 +40,37 @@
                 </section>
                 <section class="alerts"><h2>Recent alerts</h2><table><thead><tr><th>Time</th><th>PC</th><th>Ping event</th></tr></thead><tbody id="alert-rows">
                     {% for alert in alerts %}<tr><td>{{ alert.time }}</td><td>{{ alert.device }}</td><td>{{ alert.message }}</td></tr>{% else %}<tr><td colspan="3">No ping alerts.</td></tr>{% endfor %}
-                </tbody></table></section>
+                </tbody></table><div id="alerts-pagination" style="display: flex; gap: 8px; justify-content: center; align-items: center; margin-top: 16px;"></div></section>
             </section>
 
             <section class="view-panel data-panel" data-panel="monitor" hidden>
                 <div class="monitor-heading"><div><p class="eyebrow">Local network</p><h1>Monitor PCs</h1><p class="panel-intro">Discover responding PCs, select the ones to monitor, and start ping checks.</p></div><button class="refresh-button" type="button" onclick="pollNow(this)">↻ <span>Ping now</span></button></div>
                 <section class="discovery-controls">
                     <label for="subnet-input">Subnet to discover</label>
-                    <div class="discovery-row"><input id="subnet-input" type="text" inputmode="decimal" aria-label="Local IPv4 subnet in CIDR notation"><button class="refresh-button" id="discover-button" type="button" onclick="discoverHosts(this)">⌕ <span>Discover PCs</span></button></div>
+                    <div class="discovery-row"><input id="subnet-input" type="text" inputmode="decimal" aria-label="Local IPv4 subnet in CIDR notation"><button class="refresh-button" id="discover-button" type="button" onclick="discoverHosts(this)">⌕ <span>Discover PCs</span></button><button class="refresh-button" id="auto-discover-toggle" type="button" onclick="toggleAutoDiscover(this)" style="display: none;">⟳ <span>Auto refresh: off</span></button></div>
+                    <div class="discovery-options">
+                        <div><label for="discovery-limit">Discover up to:</label><input id="discovery-limit" type="number" value="20" min="1" max="999" style="width: 60px; padding: 6px;"><select id="limit-presets" onchange="document.querySelector('#discovery-limit').value = this.value;" style="padding: 6px; margin-left: 8px;"><option value="">Presets:</option><option value="10">10</option><option value="20">20</option><option value="50">50</option><option value="100">100</option><option value="256">All</option></select></div>
+                        <div style="margin-top: 8px;"><label><input type="checkbox" id="show-phones-toggle" checked onchange="filterDiscoveryRows()"> Show phones (📱)</label></div>
+                    </div>
                     <p id="discovery-status" role="status"></p>
                 </section>
                 <section id="discovery-section" hidden><div class="section-heading"><h2>Available PCs</h2><button class="refresh-button" type="button" onclick="addSelectedHosts()">＋ <span>Add selected</span></button></div><div class="table-wrap"><table><thead><tr><th>Select</th><th>PC / hostname</th><th>IPv4 address</th></tr></thead><tbody id="discovered-rows"></tbody></table></div></section>
-                <section><div class="section-heading"><h2>Selected PCs</h2><span id="monitor-summary"></span></div><div class="chart-card"><div class="chart-heading"><div><h2>Ping latency</h2><small>Median of five ICMP replies per check; Windows may report values as &lt;1 ms.</small></div><label for="chart-device">PC</label><select id="chart-device" aria-label="Select PC for latency chart" onchange="drawPingChart()"></select></div><canvas id="ping-chart" height="220"></canvas></div>
-                    <div class="table-wrap"><table><thead><tr><th>PC</th><th>IPv4 address</th><th>Latest ping</th><th>Min</th><th>Median</th><th>Max</th><th>Loss</th><th>Interval (sec)</th><th>Control</th></tr></thead><tbody id="monitored-rows"></tbody></table></div>
+                <section><div class="section-heading"><h2>Selected PCs</h2><span id="monitor-summary"></span></div>
+                    <div style="display: flex; gap: 12px; margin-bottom: 16px; flex-wrap: wrap; align-items: center;">
+                        <input id="monitor-search" type="text" placeholder="Search by IP or hostname..." style="flex: 1; min-width: 200px; padding: 8px; border: 1px solid #ccc; border-radius: 4px;" onkeyup="applySearchAndPagination()">
+                        <button class="refresh-button" type="button" onclick="clearMonitorSearch()" style="padding: 6px 12px;">✕ <span>Clear</span></button>
+                        <button class="refresh-button" type="button" onclick="bulkStartAll()" style="padding: 6px 12px; background: #4CAF50;">▶ <span>Start All</span></button>
+                        <button class="refresh-button" type="button" onclick="bulkPauseAll()" style="padding: 6px 12px; background: #FF9800;">⏸ <span>Pause All</span></button>
+                    </div>
+                    <div class="chart-card"><div class="chart-heading"><div><h2>Ping latency</h2><small>Median of five ICMP replies per check; Windows may report values as &lt;1 ms.</small></div><label for="chart-device">PC</label><select id="chart-device" aria-label="Select PC for latency chart" onchange="drawPingChart()"></select></div><canvas id="ping-chart" height="220"></canvas></div>
+                    <div class="table-wrap"><table><thead><tr><th>PC</th><th>IPv4 address</th><th>Mac Address</th><th>Latest ping</th><th>Min</th><th>Median</th><th>Max</th><th>Loss</th><th>Interval (sec)</th><th>Control</th></tr></thead><tbody id="monitored-rows"></tbody></table></div>
+                    <div id="pagination-controls" style="display: flex; gap: 8px; justify-content: center; align-items: center; margin-top: 16px;"></div>
                 </section>
             </section>
 
             <section class="view-panel data-panel" data-panel="alerts" hidden><p class="eyebrow">Ping events</p><h1>Alerts</h1><p class="panel-intro">Unreachable PCs and high-latency ping results.</p><div class="table-wrap"><table><thead><tr><th>Time</th><th>PC</th><th>Event</th><th>Status</th></tr></thead><tbody>{% for alert in alerts %}<tr><td>{{ alert.time }}</td><td>{{ alert.device }}</td><td>{{ alert.message }}</td><td><span class="status-pill status-warning">Open</span></td></tr>{% else %}<tr><td colspan="4">No ping alerts.</td></tr>{% endfor %}</tbody></table></div></section>
 
-            <section class="view-panel data-panel" data-panel="reports" hidden><p class="eyebrow">ICMP history</p><h1>Ping Records</h1><p class="panel-intro">Saved ping replies, packet loss, and latency statistics.</p><p><a class="refresh-button" href="/api/dataset.csv">Download ping dataset</a> <a class="refresh-button" href="/api/model-records.csv">Download ping records</a></p><div class="history-toolbar"><strong>History range</strong><div class="range-buttons"><button type="button" class="range-button active" data-hours="1">1 hour</button><button type="button" class="range-button" data-hours="24">24 hours</button><button type="button" class="range-button" data-hours="168">7 days</button></div></div><div class="table-wrap"><table id="reports-table"><thead><tr><th>Time</th><th>PC</th><th>IP</th><th>Replies</th><th>Loss</th><th>Min</th><th>Median</th><th>Max</th></tr></thead><tbody>{% for row in monitor_summary.history|reverse %}<tr data-recorded-at="{{ row.time }}"><td>{{ row.time }}</td><td>{{ row.device }}</td><td>{{ row.target }}</td><td>{{ row.ping_received }}/{{ row.ping_sent }}</td><td>{{ row.packet_loss }}%</td><td>{{ row.latency_min_display }}</td><td>{{ row.latency_median_display }}</td><td>{{ row.latency_max_display }}</td></tr>{% else %}<tr><td colspan="8">No ping records yet.</td></tr>{% endfor %}</tbody></table></div></section>
+            <section class="view-panel data-panel" data-panel="reports" hidden><p class="eyebrow">ICMP history</p><h1>Ping Records</h1><p class="panel-intro">Saved ping replies, packet loss, and latency statistics.</p><p><a class="refresh-button" href="/api/dataset.csv">Download ping dataset</a> <a class="refresh-button" href="/api/model-records.csv">Download ping records</a></p><div class="history-toolbar"><strong>History range</strong><div class="range-buttons"><button type="button" class="range-button active" data-hours="1">1 hour</button><button type="button" class="range-button" data-hours="24">24 hours</button><button type="button" class="range-button" data-hours="168">7 days</button></div></div><div class="table-wrap"><table id="reports-table"><thead><tr><th>Time</th><th>PC</th><th>IP</th><th>Replies</th><th>Loss</th><th>Min</th><th>Median</th><th>Max</th></tr></thead><tbody>{% for row in monitor_summary.history|reverse %}<tr data-recorded-at="{{ row.time }}"><td>{{ row.time }}</td><td>{{ row.device }}</td><td>{{ row.target }}</td><td>{{ row.ping_received }}/{{ row.ping_sent }}</td><td>{{ row.packet_loss }}%</td><td>{{ row.latency_min_display }}</td><td>{{ row.latency_median_display }}</td><td>{{ row.latency_max_display }}</td></tr>{% else %}<tr><td colspan="8">No ping records yet.</td></tr>{% endfor %}</tbody></table></div><div id="ping-records-pagination" style="display: flex; gap: 8px; justify-content: center; align-items: center; margin-top: 16px;"></div></section>
 
             <section class="view-panel data-panel" data-panel="ml-insights" hidden>
                 <header class="ml-heading"><div><p class="eyebrow">Model training and results</p><h1>ML Insights</h1><p class="panel-intro">Train and review ping anomaly, forecast, and condition models.</p></div><button class="refresh-button" id="train-models-button" type="button" onclick="trainMlModels(this)">Train models</button></header>
@@ -80,16 +92,19 @@
                     <h2>Review training labels</h2>
                     <p class="panel-intro">Labels describe the observed ping condition, not a verified physical root cause. Review samples before using them to train XGBoost or the normal baseline.</p>
                     <div class="table-wrap"><table><thead><tr><th>Time</th><th>PC</th><th>Latest ping</th><th>Loss</th><th>Condition label</th><th>Action</th></tr></thead><tbody id="ml-label-rows"><tr><td colspan="6">Loading samples...</td></tr></tbody></table></div>
+                    <div id="ml-labels-pagination" style="display: flex; gap: 8px; justify-content: center; align-items: center; margin-top: 16px;"></div>
                 </section>
                 <section class="ml-results-section">
                     <div class="section-heading"><h2>Latest model outputs</h2><button class="range-button" type="button" onclick="refreshMlPanel()">Refresh</button></div>
                     <p class="panel-intro">Bottleneck, congestion, and failure are ping-based risk indicators derived from GRU forecasts, not confirmed physical causes.</p>
-                    <div class="table-wrap"><table><thead><tr><th>PC</th><th>Latest ping</th><th>Isolation Forest</th><th>GRU forecast</th><th>XGBoost condition</th><th>Predicted risks</th></tr></thead><tbody id="ml-insight-rows"><tr><td colspan="6">Loading predictions...</td></tr></tbody></table></div>
+                    <div class="table-wrap ml-insights-scroll"><table><thead><tr><th>PC</th><th>Latest ping</th><th>Isolation Forest</th><th>GRU forecast</th><th>XGBoost condition</th><th>Predicted risks</th></tr></thead><tbody id="ml-insight-rows"><tr><td colspan="6">Loading predictions...</td></tr></tbody></table></div>
+                    <div id="ml-insights-pagination" style="display: flex; gap: 8px; justify-content: center; align-items: center; margin-top: 16px;"></div>
                 </section>
                 <section class="ml-results-section">
                     <h2>Suggested next steps</h2>
                     <p class="panel-intro">Suggestions are advisory. Selecting one records your choice; it does not change network settings or retrain a model.</p>
                     <div class="table-wrap"><table><thead><tr><th>PC</th><th>Model</th><th>Evidence</th><th>Suggested check</th><th>Action</th></tr></thead><tbody id="ml-recommendation-rows"><tr><td colspan="5">Loading suggestions...</td></tr></tbody></table></div>
+                    <div id="ml-recommendations-pagination" style="display: flex; gap: 8px; justify-content: center; align-items: center; margin-top: 16px;"></div>
                 </section>
                 <section class="ml-results-section">
                     <h2>Selected actions and outcomes</h2>
@@ -99,7 +114,7 @@
                 </section>
             </section>
 
-            <section class="view-panel data-panel" data-panel="settings" hidden><p class="eyebrow">Display and monitoring</p><h1>Settings</h1><div class="settings-list"><div class="appearance-setting"><div class="theme-logo" aria-hidden="true"><span class="theme-sun">☀</span><span class="theme-moon">☾</span></div><div><strong>Appearance</strong><small id="theme-label">Light mode</small></div><label class="switch-control" for="theme-toggle"><span class="sr-only">Turn dark mode on or off</span><input id="theme-toggle" type="checkbox"><span class="switch-slider"></span></label></div><div class="reference-setting"><div><strong>External ping reference</strong><small>IPv4 address; some hosts may block ICMP.</small></div><div class="reference-controls"><input id="external-reference-ip" type="text" inputmode="decimal" placeholder="1.1.1.1" aria-label="External reference IPv4 address"><button class="range-button" type="button" onclick="saveExternalReference()">Save</button></div></div></div><p id="reference-setting-status" role="status"></p></section>
+            <section class="view-panel data-panel" data-panel="settings" hidden><p class="eyebrow">Display and monitoring</p><h1>Settings</h1><div class="settings-list"><div class="appearance-setting"><div class="theme-logo" aria-hidden="true"><span class="theme-sun">☀</span><span class="theme-moon">☾</span></div><div><strong>Appearance</strong><small id="theme-label">Light mode</small></div><label class="switch-control" for="theme-toggle"><span class="sr-only">Turn dark mode on or off</span><input id="theme-toggle" type="checkbox"><span class="switch-slider"></span></label></div><div class="building-setting"><div><strong>Building/Location name</strong><small>Identifies this monitoring instance.</small></div><div class="building-controls"><input id="building-name-input" type="text" placeholder="Building 1" value="{{ building_name }}" aria-label="Building name"><button class="range-button" type="button" onclick="saveBuildingName()">Save</button></div></div><div class="building-setting"><div><strong>Saved databases</strong><small>Switch to a different building's database.</small></div><div class="building-controls"><select id="database-selector" aria-label="Select database"><option value="">Loading...</option></select><button class="range-button" type="button" onclick="switchDatabase()">Switch</button></div></div><div class="building-setting"><div><strong>Restart monitoring</strong><small>Restart the polling and recording service.</small></div><div class="building-controls"><button class="range-button" type="button" onclick="restartMonitoring()">Restart</button></div></div><div class="reference-setting"><div><strong>External ping reference</strong><small>IPv4 address; some hosts may block ICMP.</small></div><div class="reference-controls"><input id="external-reference-ip" type="text" inputmode="decimal" placeholder="1.1.1.1" aria-label="External reference IPv4 address"><button class="range-button" type="button" onclick="saveExternalReference()">Save</button></div></div></div><p id="reference-setting-status" role="status"></p></section>
 
             <section class="view-panel data-panel" data-panel="about" hidden><p class="eyebrow">ICMP monitoring</p><h1>About</h1><p class="panel-intro">This system checks PC reachability, packet loss, and round-trip latency using ping.</p></section>
         </main>
@@ -108,6 +123,22 @@
         let monitorDevices = [];
         let monitorHistory = {{ monitor_summary.history | tojson }};
         let latestSampleId = null;
+        let autoDiscoverTimer = null;
+        let autoDiscoverActive = false;
+        let allDiscoveredHosts = [];
+        let monitorCurrentPage = 1;
+        let monitorSearchQuery = '';
+        let allTelemetry = [];
+        let allMlRecords = [];
+        let allAlerts = [];
+        let pingRecordsCurrentPage = 1;
+        let mlInsightsCurrentPage = 1;
+        let alertsCurrentPage = 1;
+        let mlLabelsCurrentPage = 1;
+        let mlRecommendationsCurrentPage = 1;
+        let allMlLabels = [];
+        let allMlRecommendations = [];
+        const itemsPerPage = 10;
 
         async function requestJson(url, options = {}) {
             const response = await fetch(url, options);
@@ -120,17 +151,87 @@
             document.querySelector('#discovery-status').textContent = message;
         }
 
-        async function discoverHosts(button) {
-            button.disabled = true;
-            setStatus('Discovering responding addresses...');
+        async function saveBuildingName() {
+            const input = document.querySelector('#building-name-input');
+            const building_name = input.value.trim();
+            if (!building_name) {
+                alert('Please enter a building name');
+                return;
+            }
             try {
-                const {hosts} = await requestJson('/api/discover', {method: 'POST', headers: {'Content-Type': 'application/json'}, body: JSON.stringify({subnet: document.querySelector('#subnet-input').value})});
+                await requestJson('/api/settings/building-name', {
+                    method: 'PATCH',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ building_name })
+                });
+                document.querySelector('#reference-setting-status').textContent = 'Building name saved! New monitoring records will be stored in this building\'s database.'
+                await loadDatabaseSelector();
+                setTimeout(() => { document.querySelector('#reference-setting-status').textContent = ''; }, 5000);
+            } catch (error) {
+                document.querySelector('#reference-setting-status').textContent = `Error: ${error.message}`;
+            }
+        }
+
+        async function discoverHosts(button, silent = false) {
+            if (!silent) {
+                button.disabled = true;
+                setStatus('Discovering responding addresses...');
+            }
+            try {
+                const limit = parseInt(document.querySelector('#discovery-limit').value) || 20;
+                const {hosts} = await requestJson('/api/discover', {method: 'POST', headers: {'Content-Type': 'application/json'}, body: JSON.stringify({subnet: document.querySelector('#subnet-input').value, limit: limit})});
+                allDiscoveredHosts = hosts;
                 const selected = new Set(monitorDevices.map((device) => device.target));
-                document.querySelector('#discovered-rows').innerHTML = hosts.map((host) => `<tr><td><input type="checkbox" value="${host.target}" ${selected.has(host.target) ? 'disabled' : ''}></td><td>${escapeHtml(host.name)}</td><td>${host.target}</td></tr>`).join('') || '<tr><td colspan="3">No responding PCs found.</td></tr>';
+                filterDiscoveryRows();
                 document.querySelector('#discovery-section').hidden = false;
-                setStatus(`${hosts.length} responding address${hosts.length === 1 ? '' : 'es'} found.`);
-            } catch (error) { setStatus(error.message); }
-            finally { button.disabled = false; }
+                document.querySelector('#auto-discover-toggle').style.display = 'inline-block';
+                if (!silent) {
+                    setStatus(`${hosts.length} responding address${hosts.length === 1 ? '' : 'es'} found.`);
+                }
+            } catch (error) { if (!silent) { setStatus(error.message); } }
+            finally { if (!silent) { button.disabled = false; } }
+        }
+
+        function filterDiscoveryRows() {
+            const showPhones = document.querySelector('#show-phones-toggle').checked;
+            const selected = new Set(monitorDevices.map((device) => device.target));
+            const rows = allDiscoveredHosts
+                .filter(host => showPhones || host.device_type !== 'phone')
+                .map((host) => {
+                    const icon = host.device_type === 'phone' ? '📱' : '💻';
+                    const phoneClass = host.device_type === 'phone' ? ' class="phone-device"' : '';
+                    return `<tr${phoneClass}><td><input type="checkbox" value="${host.target}" ${selected.has(host.target) ? 'disabled' : ''}></td><td>${icon} ${escapeHtml(host.name)}</td><td>${host.target}</td></tr>`;
+                })
+                .join('') || '<tr><td colspan="3">No responding devices found.</td></tr>';
+            document.querySelector('#discovered-rows').innerHTML = rows;
+        }
+
+        function toggleAutoDiscover(button) {
+            autoDiscoverActive = !autoDiscoverActive;
+            const subnetInput = document.querySelector('#subnet-input').value;
+            
+            if (autoDiscoverActive && subnetInput) {
+                button.querySelector('span').textContent = 'Auto refresh: on';
+                button.classList.add('active');
+                discoverHosts(button, true);
+                autoDiscoverTimer = setInterval(() => {
+                    if (autoDiscoverActive && document.querySelector('#subnet-input').value === subnetInput) {
+                        discoverHosts(button, true);
+                    }
+                }, 10000);
+            } else {
+                stopDiscoveryRefresh(button);
+            }
+        }
+
+        function stopDiscoveryRefresh(button) {
+            autoDiscoverActive = false;
+            if (autoDiscoverTimer) {
+                clearInterval(autoDiscoverTimer);
+                autoDiscoverTimer = null;
+            }
+            button.querySelector('span').textContent = 'Auto refresh: off';
+            button.classList.remove('active');
         }
 
         async function addSelectedHosts() {
@@ -140,6 +241,7 @@
             });
             if (!selected.length) { setStatus('Select at least one available PC.'); return; }
             try {
+                stopDiscoveryRefresh(document.querySelector('#auto-discover-toggle'));
                 await requestJson('/api/devices', {method: 'POST', headers: {'Content-Type': 'application/json'}, body: JSON.stringify({devices: selected})});
                 setStatus(`${selected.length} PC${selected.length === 1 ? '' : 's'} added. Start monitoring when ready.`);
                 await refreshStatus();
@@ -176,17 +278,236 @@
             catch (error) { setStatus(error.message); }
         }
 
+        function getFilteredDevices() {
+            const query = monitorSearchQuery.toLowerCase().trim();
+            if (!query) return monitorDevices;
+            return monitorDevices.filter(device => 
+                device.name.toLowerCase().includes(query) || 
+                device.target.toLowerCase().includes(query)
+            );
+        }
+
+        function renderPagination(filteredCount) {
+            const totalPages = Math.ceil(filteredCount / itemsPerPage);
+            const container = document.querySelector('#pagination-controls');
+            
+            if (totalPages <= 1) {
+                container.innerHTML = '';
+                return;
+            }
+
+            let html = '<button class="range-button" type="button" onclick="previousPage()" ' + (monitorCurrentPage === 1 ? 'disabled' : '') + '>← Previous</button>';
+            
+            for (let i = 1; i <= totalPages; i++) {
+                if (i === monitorCurrentPage) {
+                    html += `<button class="range-button active" type="button" disabled>${i}</button>`;
+                } else {
+                    html += `<button class="range-button" type="button" onclick="goToPage(${i})">${i}</button>`;
+                }
+            }
+            
+            html += '<button class="range-button" type="button" onclick="nextPage()" ' + (monitorCurrentPage === totalPages ? 'disabled' : '') + '>Next →</button>';
+            html += `<span style="margin-left: 16px; color: #666; font-size: 0.9em;">Page ${monitorCurrentPage} of ${totalPages}</span>`;
+            
+            container.innerHTML = html;
+        }
+
         function renderDevices(devices) {
             monitorDevices = devices;
+            const filteredDevices = getFilteredDevices();
+            const totalFiltered = filteredDevices.length;
+            const startIndex = (monitorCurrentPage - 1) * itemsPerPage;
+            const endIndex = startIndex + itemsPerPage;
+            const pageDevices = filteredDevices.slice(startIndex, endIndex);
+            
             const tbody = document.querySelector('#monitored-rows');
-            tbody.innerHTML = devices.map((device) => `<tr><td>${escapeHtml(device.name)}</td><td>${device.target}</td><td>${device.latest?.online ? 'Online' : device.latest ? 'Offline' : 'Not checked'}</td><td>${device.latest?.latency_min_display || '-'}</td><td>${device.latest?.latency_median_display || '-'}</td><td>${device.latest?.latency_max_display || '-'}</td><td>${device.latest ? `${device.latest.packet_loss}%` : '-'}</td><td><input type="number" min="5" max="3600" value="${device.interval_seconds}" aria-label="Ping interval seconds" onchange="setIntervalSeconds(${device.id}, this)"></td><td><button class="range-button" type="button" onclick="setMonitoring(${device.id}, ${!device.active})">${device.active ? 'Pause' : 'Start'}</button> <button class="range-button" type="button" onclick="removeDevice(${device.id})" aria-label="Remove ${escapeHtml(device.name)}">Remove</button></td></tr>`).join('') || '<tr><td colspan="9">Discover and add PCs to monitor.</td></tr>';
+            tbody.innerHTML = pageDevices.map((device) => {
+                const icon = device.device_type === 'phone' ? '📱' : '💻';
+                const typeLabel = device.device_type === 'phone' ? 'Phone' : 'PC';
+                const deviceClass = device.device_type === 'phone' ? ' class="phone-device"' : '';
+                return `<tr${deviceClass}><td>${icon} ${escapeHtml(device.name)}<br><small style="color: #999;">${typeLabel}</small></td><td>${device.target}</td><td>${device.mac_address || '-'}</td><td>${device.latest?.online ? 'Online' : device.latest ? 'Offline' : 'Not checked'}</td><td>${device.latest?.latency_min_display || '-'}</td><td>${device.latest?.latency_median_display || '-'}</td><td>${device.latest?.latency_max_display || '-'}</td><td>${device.latest ? `${device.latest.packet_loss}%` : '-'}</td><td><input type="number" min="5" max="3600" value="${device.interval_seconds}" aria-label="Ping interval seconds" onchange="setIntervalSeconds(${device.id}, this)"></td><td><button class="range-button" type="button" onclick="setMonitoring(${device.id}, ${!device.active})">${device.active ? 'Pause' : 'Start'}</button> <button class="range-button" type="button" onclick="removeDevice(${device.id})" aria-label="Remove ${escapeHtml(device.name)}">Remove</button></td></tr>`;
+            }).join('') || '<tr><td colspan="10">Discover and add PCs to monitor.</td></tr>';
+            
             document.querySelector('#saved-count').textContent = devices.length;
             document.querySelector('#active-count').textContent = devices.filter((device) => device.active).length;
-            document.querySelector('#monitor-summary').textContent = `${devices.filter((device) => device.active).length} active`;
+            document.querySelector('#monitor-summary').textContent = `${devices.filter((device) => device.active).length} active (${totalFiltered} shown)`;
+            
             const chartSelect = document.querySelector('#chart-device');
             const current = chartSelect.value;
             chartSelect.innerHTML = devices.map((device) => `<option value="${device.target}">${escapeHtml(device.name)}</option>`).join('');
             if (devices.some((device) => device.target === current)) chartSelect.value = current;
+            
+            renderPagination(totalFiltered);
+        }
+
+        function applySearchAndPagination() {
+            monitorSearchQuery = document.querySelector('#monitor-search').value;
+            monitorCurrentPage = 1;
+            renderDevices(monitorDevices);
+        }
+
+        function clearMonitorSearch() {
+            monitorSearchQuery = '';
+            document.querySelector('#monitor-search').value = '';
+            monitorCurrentPage = 1;
+            renderDevices(monitorDevices);
+        }
+
+        function previousPage() {
+            if (monitorCurrentPage > 1) {
+                monitorCurrentPage--;
+                renderDevices(monitorDevices);
+            }
+        }
+
+        function nextPage() {
+            const filteredDevices = getFilteredDevices();
+            const totalPages = Math.ceil(filteredDevices.length / itemsPerPage);
+            if (monitorCurrentPage < totalPages) {
+                monitorCurrentPage++;
+                renderDevices(monitorDevices);
+            }
+        }
+
+        function goToPage(pageNum) {
+            monitorCurrentPage = pageNum;
+            renderDevices(monitorDevices);
+        }
+
+        async function bulkStartAll() {
+            if (!confirm(`Start monitoring on all ${monitorDevices.length} PCs?`)) return;
+            try {
+                for (const device of monitorDevices) {
+                    if (!device.active) {
+                        await requestJson(`/api/devices/${device.id}`, {method: 'PATCH', headers: {'Content-Type': 'application/json'}, body: JSON.stringify({active: true})});
+                    }
+                }
+                setStatus(`✓ Started monitoring on ${monitorDevices.length} PCs`);
+                await refreshStatus();
+            } catch (error) { setStatus(error.message); }
+        }
+
+        async function bulkPauseAll() {
+            if (!confirm(`Pause monitoring on all ${monitorDevices.length} PCs?`)) return;
+            try {
+                for (const device of monitorDevices) {
+                    if (device.active) {
+                        await requestJson(`/api/devices/${device.id}`, {method: 'PATCH', headers: {'Content-Type': 'application/json'}, body: JSON.stringify({active: false})});
+                    }
+                }
+                setStatus(`✓ Paused monitoring on ${monitorDevices.length} PCs`);
+                await refreshStatus();
+            } catch (error) { setStatus(error.message); }
+        }
+
+        function renderPaginationForTable(containerId, currentPage, totalItems, pageChangeFunction) {
+            const totalPages = Math.ceil(totalItems / itemsPerPage);
+            const container = document.querySelector(containerId);
+            if (!container) return;
+            
+            if (totalPages <= 1) {
+                container.innerHTML = '';
+                return;
+            }
+
+            let html = '<button class="range-button" type="button" ' + (currentPage === 1 ? 'disabled' : `onclick="${pageChangeFunction}(${currentPage - 1})`) + '>← Previous</button>';
+            
+            for (let i = 1; i <= totalPages; i++) {
+                if (i === currentPage) {
+                    html += `<button class="range-button active" type="button" disabled>${i}</button>`;
+                } else {
+                    html += `<button class="range-button" type="button" onclick="${pageChangeFunction}(${i})">${i}</button>`;
+                }
+            }
+            
+            html += '<button class="range-button" type="button" ' + (currentPage === totalPages ? 'disabled' : `onclick="${pageChangeFunction}(${currentPage + 1})`) + '>Next →</button>';
+            html += `<span style="margin-left: 16px; color: #666; font-size: 0.9em;">Page ${currentPage} of ${totalPages}</span>`;
+            
+            container.innerHTML = html;
+        }
+
+        function renderPingRecords(telemetry) {
+            allTelemetry = telemetry.slice().reverse();
+            const startIndex = (pingRecordsCurrentPage - 1) * itemsPerPage;
+            const endIndex = startIndex + itemsPerPage;
+            const pageRecords = allTelemetry.slice(startIndex, endIndex);
+            
+            const tbody = document.querySelector('#reports-table tbody');
+            tbody.innerHTML = pageRecords.map((sample) => `<tr data-recorded-at="${sample.recorded_at}"><td>${sample.recorded_at}</td><td>${escapeHtml(sample.device_name)}</td><td>${sample.target}</td><td>${sample.ping_received}/${sample.ping_sent}</td><td>${sample.packet_loss}%</td><td>${sample.latency_min_display}</td><td>${sample.latency_median_display}</td><td>${sample.latency_max_display}</td></tr>`).join('') || '<tr><td colspan="8">No ping records yet.</td></tr>';
+            
+            renderPaginationForTable('#ping-records-pagination', pingRecordsCurrentPage, allTelemetry.length, 'goToPingRecordsPage');
+        }
+
+        function renderAlertsTable(alerts) {
+            allAlerts = alerts;
+            const startIndex = (alertsCurrentPage - 1) * itemsPerPage;
+            const endIndex = startIndex + itemsPerPage;
+            const pageAlerts = allAlerts.slice(startIndex, endIndex);
+            
+            const tbody = document.querySelector('#alert-rows');
+            tbody.innerHTML = pageAlerts.map((alert) => `<tr><td>${alert.recorded_at}</td><td>${escapeHtml(alert.device_name)}</td><td>${escapeHtml(alert.message)}</td></tr>`).join('') || '<tr><td colspan="3">No ping alerts.</td></tr>';
+            
+            renderPaginationForTable('#alerts-pagination', alertsCurrentPage, allAlerts.length, 'goToAlertsPage');
+        }
+
+        function renderMlInsightsWithPagination(devices) {
+            allMlRecords = devices;
+            const startIndex = (mlInsightsCurrentPage - 1) * itemsPerPage;
+            const endIndex = startIndex + itemsPerPage;
+            const pageDevices = allMlRecords.slice(startIndex, endIndex);
+            
+            const body = document.querySelector('#ml-insight-rows');
+            body.innerHTML = pageDevices.map((device) => `<tr><td>${escapeHtml(device.device_name)}<br><small>${escapeHtml(device.target)}</small></td><td>${device.current.online ? `${device.current.latency_median_ms ?? '-'} ms` : 'Unreachable'}<br><small>${device.current.packet_loss}% loss</small></td><td>${escapeHtml(modelOutputText(device.isolation_forest, 'isolation_forest'))}</td><td>${escapeHtml(modelOutputText(device.gru, 'gru'))}</td><td>${escapeHtml(modelOutputText(device.xgboost, 'xgboost'))}</td><td>${escapeHtml(riskOutputText(device.gru))}</td></tr>`).join('') || '<tr><td colspan="6">No valid ping samples yet.</td></tr>';
+            
+            renderPaginationForTable('#ml-insights-pagination', mlInsightsCurrentPage, allMlRecords.length, 'goToMlInsightsPage');
+        }
+
+        function goToPingRecordsPage(pageNum) {
+            pingRecordsCurrentPage = pageNum;
+            renderPingRecords(allTelemetry.slice().reverse());
+        }
+
+        function goToAlertsPage(pageNum) {
+            alertsCurrentPage = pageNum;
+            renderAlertsTable(allAlerts);
+        }
+
+        function goToMlInsightsPage(pageNum) {
+            mlInsightsCurrentPage = pageNum;
+            renderMlInsightsWithPagination(allMlRecords);
+        }
+
+        function renderMlLabels(labelData) {
+            allMlLabels = labelData.samples || [];
+            const startIndex = (mlLabelsCurrentPage - 1) * itemsPerPage;
+            const endIndex = startIndex + itemsPerPage;
+            const pageLabels = allMlLabels.slice(startIndex, endIndex);
+            
+            const labels = labelData.labels || [];
+            const body = document.querySelector('#ml-label-rows');
+            body.innerHTML = pageLabels.map((sample) => `<tr><td>${escapeHtml(sample.recorded_at)}</td><td>${escapeHtml(sample.device_name)}<br><small>${escapeHtml(sample.target)}</small></td><td>${sample.online ? `${sample.latency_median_ms ?? sample.latency_ms ?? '-'} ms` : 'Unreachable'}</td><td>${sample.packet_loss}%</td><td><select class=\"ml-label-select\" aria-label=\"Condition label for sample ${sample.id}\"><option value=\"\">Choose label</option>${labels.map((label) => `<option value=\"${escapeHtml(label)}\" ${sample.condition_label === label ? 'selected' : ''}>${escapeHtml(label)}</option>`).join('')}</select></td><td><button class=\"range-button\" type=\"button\" onclick=\"saveMlLabel(${sample.id}, this)\">Save</button></td></tr>`).join('') || '<tr><td colspan="6">No valid ping samples available to label.</td></tr>';            
+            renderPaginationForTable('#ml-labels-pagination', mlLabelsCurrentPage, allMlLabels.length, 'goToMlLabelsPage');
+        }
+
+        function renderMlRecommendations(devices) {
+            allMlRecommendations = devices.flatMap((device) => device.suggestions.map((suggestion) => ({...suggestion, device_name: device.device_name, target: device.target, telemetry_id: device.telemetry_id}))) || [];
+            const startIndex = (mlRecommendationsCurrentPage - 1) * itemsPerPage;
+            const endIndex = startIndex + itemsPerPage;
+            const pageRecs = allMlRecommendations.slice(startIndex, endIndex);
+            
+            const body = document.querySelector('#ml-recommendation-rows');
+            body.innerHTML = pageRecs.map((row) => `<tr><td>${escapeHtml(row.device_name)}<br><small>${escapeHtml(row.target)}</small></td><td>${escapeHtml(row.model_sources.join(', '))}</td><td>${escapeHtml(row.evidence.join(' '))}</td><td>${escapeHtml(row.action)}</td><td><button class=\"range-button\" type=\"button\" data-select-telemetry=\"${row.telemetry_id}\" data-select-suggestion=\"${escapeHtml(row.id)}\">Select</button></td></tr>`).join('') || '<tr><td colspan="5">No suggestions available.</td></tr>';            
+            renderPaginationForTable('#ml-recommendations-pagination', mlRecommendationsCurrentPage, allMlRecommendations.length, 'goToMlRecommendationsPage');
+        }
+
+        function goToMlLabelsPage(pageNum) {
+            mlLabelsCurrentPage = pageNum;
+            renderMlLabels({samples: allMlLabels, labels: document.querySelector('#ml-label-rows') ? Array.from(document.querySelectorAll('#ml-label-rows select option')).filter((o, i) => i > 0 && !o.disabled).map(o => o.value).filter((v, i, a) => a.indexOf(v) === i) : []});
+        }
+
+        function goToMlRecommendationsPage(pageNum) {
+            mlRecommendationsCurrentPage = pageNum;
+            renderMlRecommendations([{suggestions: allMlRecommendations}]);
         }
 
         async function refreshStatus() {
@@ -199,9 +520,10 @@
                 if (fresh.length && fresh[fresh.length - 1].id !== latestSampleId) {
                     latestSampleId = fresh[fresh.length - 1].id;
                     monitorHistory = fresh.map((sample) => ({time: sample.recorded_at, device: sample.target, latency: sample.latency_median_ms ?? sample.latency_ms, latency_min_display:sample.latency_min_display, latency_median_display:sample.latency_median_display, latency_max_display:sample.latency_max_display, ping_received:sample.ping_received, ping_sent:sample.ping_sent, online: Boolean(sample.online), packet_loss: sample.packet_loss}));
-                    document.querySelector('#reports-table tbody').innerHTML = fresh.slice().reverse().map((sample) => `<tr data-recorded-at="${sample.recorded_at}"><td>${sample.recorded_at}</td><td>${escapeHtml(sample.device_name)}</td><td>${sample.target}</td><td>${sample.ping_received}/${sample.ping_sent}</td><td>${sample.packet_loss}%</td><td>${sample.latency_min_display}</td><td>${sample.latency_median_display}</td><td>${sample.latency_max_display}</td></tr>`).join('') || '<tr><td colspan="8">No ping records yet.</td></tr>';
+                    renderPingRecords(fresh);
                     drawPingChart();
                 }
+                renderAlertsTable(data.alerts || []);
             } catch (error) { setStatus(error.message); }
         }
 
@@ -250,8 +572,7 @@
         }
 
         function renderMlInsights(devices) {
-            const body = document.querySelector('#ml-insight-rows');
-            body.innerHTML = devices.map((device) => `<tr><td>${escapeHtml(device.device_name)}<br><small>${escapeHtml(device.target)}</small></td><td>${device.current.online ? `${device.current.latency_median_ms ?? '-'} ms` : 'Unreachable'}<br><small>${device.current.packet_loss}% loss</small></td><td>${escapeHtml(modelOutputText(device.isolation_forest, 'isolation_forest'))}</td><td>${escapeHtml(modelOutputText(device.gru, 'gru'))}</td><td>${escapeHtml(modelOutputText(device.xgboost, 'xgboost'))}</td><td>${escapeHtml(riskOutputText(device.gru))}</td></tr>`).join('') || '<tr><td colspan="6">No valid ping samples yet.</td></tr>';
+            renderMlInsightsWithPagination(devices);
         }
 
         function renderNetworkReferences(data) {
@@ -287,6 +608,46 @@
             } catch (error) { status.textContent = error.message; }
         }
 
+        async function loadDatabaseSelector() {
+            const selector = document.querySelector('#database-selector');
+            const status = document.querySelector('#reference-setting-status');
+            try {
+                const data = await requestJson('/api/settings/databases');
+                selector.innerHTML = data.databases.map((db) => `<option value="${escapeAttribute(db.name)}" ${db.name === data.current_building ? 'selected' : ''}>${escapeHtml(db.name)}</option>`).join('') || '<option value="">No databases found</option>';
+            } catch (error) { status.textContent = error.message; }
+        }
+
+        async function switchDatabase() {
+            const selector = document.querySelector('#database-selector');
+            const status = document.querySelector('#reference-setting-status');
+            const building_name = selector.value;
+            if (!building_name) {
+                status.textContent = 'Select a database first.';
+                return;
+            }
+            try {
+                const result = await requestJson('/api/settings/databases/select', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ building_name })
+                });
+                status.textContent = result.message || 'Database switched successfully!';
+                document.querySelector('#building-name-input').value = result.building_name;
+                await loadDatabaseSelector();
+            } catch (error) { status.textContent = error.message; }
+        }
+
+        async function restartMonitoring() {
+            const status = document.querySelector('#reference-setting-status');
+            try {
+                const result = await requestJson('/api/control/restart-monitoring', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' }
+                });
+                status.textContent = result.message || 'Monitoring service restarted successfully!';
+            } catch (error) { status.textContent = error.message; }
+        }
+
         async function loadExternalReferenceSetting() {
             try {
                 const data = await requestJson('/api/network-references');
@@ -294,23 +655,11 @@
             } catch (error) { document.querySelector('#reference-setting-status').textContent = error.message; }
         }
 
-        function renderMlRecommendations(devices) {
-            const body = document.querySelector('#ml-recommendation-rows');
-            const rows = devices.flatMap((device) => device.suggestions.map((suggestion) => `<tr><td>${escapeHtml(device.device_name)}<br><small>${escapeHtml(device.target)}</small></td><td>${escapeHtml(suggestion.model_sources.join(', '))}</td><td>${escapeHtml(suggestion.evidence.join(' '))}</td><td>${escapeHtml(suggestion.action)}</td><td><button class="range-button" type="button" data-select-telemetry="${device.telemetry_id}" data-select-suggestion="${escapeHtml(suggestion.id)}">Select</button></td></tr>`));
-            body.innerHTML = rows.join('') || '<tr><td colspan="5">No suggestions available.</td></tr>';
-        }
-
         function renderRecommendationFeedback(feedback) {
             const outcomes = [['resolved', 'Resolved'], ['not_resolved', 'Not resolved'], ['unknown', 'Unknown']];
             const findings = ['', 'Shared path degradation', 'Device-specific issue', 'ICMP blocked', 'No issue found', 'Other / unknown'];
             const body = document.querySelector('#ml-feedback-rows');
             body.innerHTML = feedback.map((item) => `<tr><td>${escapeHtml(item.selected_at)}</td><td>${escapeHtml(item.device_name)}<br><small>${escapeHtml(item.target)}</small></td><td>${escapeHtml(item.model_sources.join(', '))}<br><small>${escapeHtml(item.evidence.join(' '))}</small></td><td>${escapeHtml(item.suggested_action)}</td><td><select class="ml-feedback-control" aria-label="Outcome for selected action ${item.id}"><option value="">Record outcome</option>${outcomes.map(([value, label]) => `<option value="${value}" ${item.outcome === value ? 'selected' : ''}>${label}</option>`).join('')}</select></td><td><select class="ml-feedback-control" aria-label="Verified finding for selected action ${item.id}">${findings.map((value) => `<option value="${escapeAttribute(value)}" ${item.verified_finding === value ? 'selected' : ''}>${escapeHtml(value || 'Not verified')}</option>`).join('')}</select></td><td><input class="ml-feedback-control ml-feedback-notes" type="text" maxlength="1000" value="${escapeAttribute(item.notes)}" aria-label="Notes for selected action ${item.id}"></td><td><button class="range-button" type="button" onclick="saveMlRecommendationOutcome(${item.id}, this)">Save</button></td></tr>`).join('') || '<tr><td colspan="8">No selected suggestions yet.</td></tr>';
-        }
-
-        function renderMlLabels(data) {
-            const body = document.querySelector('#ml-label-rows');
-            const labels = data.labels;
-            body.innerHTML = data.samples.map((sample) => `<tr><td>${escapeHtml(sample.recorded_at)}</td><td>${escapeHtml(sample.device_name)}<br><small>${escapeHtml(sample.target)}</small></td><td>${sample.online ? `${sample.latency_median_ms ?? sample.latency_ms ?? '-'} ms` : 'Unreachable'}</td><td>${sample.packet_loss}%</td><td><select class="ml-label-select" aria-label="Condition label for sample ${sample.id}"><option value="">Choose label</option>${labels.map((label) => `<option value="${escapeHtml(label)}" ${sample.condition_label === label ? 'selected' : ''}>${escapeHtml(label)}</option>`).join('')}</select></td><td><button class="range-button" type="button" onclick="saveMlLabel(${sample.id}, this)">Save</button></td></tr>`).join('') || '<tr><td colspan="6">No valid ping samples available to label.</td></tr>';
         }
 
         async function refreshMlPanel() {
@@ -435,7 +784,7 @@
             panels.forEach((panel) => { const visible = panel.dataset.panel === item.dataset.view; panel.hidden = !visible; panel.classList.toggle('active', visible); });
             if (item.dataset.view === 'monitor') { drawPingChart(); refreshStatus(); }
             if (item.dataset.view === 'ml-insights') refreshMlPanel();
-            if (item.dataset.view === 'settings') loadExternalReferenceSetting();
+            if (item.dataset.view === 'settings') { loadExternalReferenceSetting(); loadDatabaseSelector(); }
         }));
 
         document.querySelector('#ml-recommendation-rows').addEventListener('click', (event) => {

@@ -263,6 +263,32 @@ header {
     gap: 8px;
 }
 
+.discovery-options {
+    margin-top: 12px;
+    padding-top: 12px;
+    border-top: 1px solid #e5eef7;
+}
+
+.discovery-options > div {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+}
+
+.discovery-options label {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    color: #536b81;
+    font-size: .9rem;
+    cursor: pointer;
+}
+
+.discovery-options input[type="checkbox"] {
+    accent-color: #1666d3;
+    cursor: pointer;
+}
+
 .discovery-row input,
 #monitored-rows input[type="number"],
 .chart-heading select {
@@ -298,6 +324,18 @@ body.dark-mode .discovery-controls {
 body.dark-mode .discovery-controls > label,
 body.dark-mode .chart-heading > label,
 body.dark-mode .discovery-controls [role="status"] {
+    color: #9db1c3;
+}
+
+body.dark-mode .discovery-options {
+    border-top-color: #2b4153;
+}
+
+body.dark-mode .discovery-options > div {
+    color: #9db1c3;
+}
+
+body.dark-mode .discovery-options label {
     color: #9db1c3;
 }
 
@@ -464,6 +502,13 @@ header p {
     color: #1666d3;
 }
 
+.refresh-button.active {
+    border-color: #1666d3;
+    background: #e6f0ff;
+    color: #1666d3;
+    font-weight: 500;
+}
+
 .summary-cards {
     display: grid;
     grid-template-columns: repeat(4, minmax(160px, 1fr));
@@ -621,6 +666,20 @@ header p {
 
 .table-wrap tr:last-child td {
     border-bottom: 0;
+}
+
+.table-wrap tr.phone-device {
+    background: #f9f3ff;
+}
+
+body.dark-mode .table-wrap tr.phone-device {
+    background: #2a1f3a;
+}
+
+.ml-insights-scroll {
+    max-height: 600px;
+    overflow-y: auto;
+    overflow-x: auto;
 }
 
 .status-pill {
