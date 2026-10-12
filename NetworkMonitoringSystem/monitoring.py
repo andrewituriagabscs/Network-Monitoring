@@ -38,32 +38,114 @@ PHONE_MANUFACTURERS = {
     "f4:f1:e0", "84:89:ad",  # Sony
     "08:62:66", "e8:99:c4",  # Amazon
 }
+# MAC OUI prefixes for known network switch / router manufacturers
+SWITCH_MANUFACTURERS = {
+    # Cisco Systems
+    "00:00:0c", "00:1a:a1", "00:1b:d4", "00:1c:57", "00:1d:70", "00:1e:be",
+    "00:1f:26", "00:21:1b", "00:22:55", "00:23:04", "00:24:13", "00:25:45",
+    "00:26:0a", "00:26:cb", "00:27:0d", "58:8d:09", "a4:56:30", "d0:c7:89",
+    "e8:ba:70", "f4:cf:e2", "f8:72:ea",
+    # HP / Aruba Networks
+    "00:0b:86", "00:1a:1e", "00:17:c8", "00:18:fe", "24:be:05", "6c:c2:17",
+    "9c:8c:d8", "b4:5d:50", "d8:c7:c8", "94:b4:0f", "f0:5c:d5",
+    # Netgear
+    "00:09:5b", "00:0f:b5", "00:14:6c", "00:18:4d", "00:1b:2f", "00:1e:2a",
+    "00:22:3f", "00:24:b2", "08:36:c9", "20:4e:7f", "28:c6:8e", "30:46:9a",
+    "44:94:fc", "a0:21:b7", "c4:04:15",
+    # TP-Link Technologies
+    "00:27:19", "14:cc:20", "1c:3b:f3", "50:c7:bf", "54:a7:03", "60:32:b1",
+    "6c:5a:b0", "74:da:38", "80:ea:96", "90:f6:52", "a0:f3:c1", "b0:be:76",
+    "c4:6e:1f", "d8:0d:17", "e8:de:27", "f4:f2:6d",
+    # MikroTik
+    "00:0c:42", "18:fd:74", "2c:c8:1b", "48:8f:5a", "6c:3b:6b", "74:4d:28",
+    "b8:69:f4", "cc:2d:e0", "d4:ca:6d", "e4:8d:8c",
+    # Ubiquiti Networks
+    "00:27:22", "04:18:d6", "18:e8:29", "24:a4:3c", "44:d9:e7", "68:72:51",
+    "78:8a:20", "80:2a:a8", "b4:fb:e4", "dc:9f:db", "f0:9f:c2",
+    # D-Link Systems
+    "00:05:5d", "00:0d:88", "00:11:95", "00:13:46", "00:15:e9", "00:17:9a",
+    "00:19:5b", "00:1b:11", "00:1c:f0", "00:1e:58", "00:21:91", "00:22:b0",
+    "00:24:01", "1c:7e:e5", "28:10:7b", "34:08:04", "84:c9:b2", "c8:be:19",
+    # Juniper Networks
+    "00:10:db", "00:12:1e", "00:19:e2", "2c:21:72", "28:8a:1c", "3c:61:04",
+    "40:b4:f0", "54:e0:32", "64:87:88", "78:19:f7",
+    # Extreme Networks / Enterasys
+    "00:01:30", "00:04:96", "00:0e:02", "00:11:88", "00:13:f7", "00:19:c6",
+    # Zyxel Communications
+    "00:13:49", "00:19:cb", "00:a0:c5", "28:28:5d", "4c:09:b4", "50:67:f0",
+    "58:8b:f3", "ac:59:75",
+    # Linksys (Belkin)
+    "00:06:25", "00:0c:41", "00:0e:08", "00:12:17", "00:14:bf", "00:16:b6",
+    "00:18:39", "00:1a:70", "00:1c:10", "00:1d:7e", "00:21:29", "00:22:6b",
+}
+
+
+
+_active_db_lock = threading.Lock()
+_active_building_name_cache: str | None = None
+
+
+def _sanitize_building_name(name: str) -> str:
+    """Sanitize building name for safe filesystem usage."""
+    sanitized = re.sub(r'[\s/\\:*?"<>|]+', '_', name.strip())
+    sanitized = sanitized.strip('_')[:60]
+    return sanitized or "Unknown_Building"
+
+
+def _get_active_building_name() -> str:
+    """Get the currently selected building name from master settings or cache."""
+    global _active_building_name_cache
+    if _active_building_name_cache:
+        return _active_building_name_cache
+    master_db = BASE_DIR / "monitoring.db"
+    if master_db.exists():
+        try:
+            with sqlite3.connect(master_db, timeout=10) as conn:
+                conn.row_factory = sqlite3.Row
+                conn.execute(
+                    "CREATE TABLE IF NOT EXISTS application_settings (key TEXT PRIMARY KEY, value TEXT NOT NULL)"
+                )
+                row = conn.execute(
+                    "SELECT value FROM application_settings WHERE key = 'active_building_name' LIMIT 1"
+                ).fetchone()
+                if not row:
+                    row = conn.execute(
+                        "SELECT value FROM application_settings WHERE key = 'building_name' LIMIT 1"
+                    ).fetchone()
+                if row and row["value"]:
+                    _active_building_name_cache = str(row["value"]).strip()
+                    return _active_building_name_cache
+        except Exception:
+            pass
+    return "Unknown Building"
+
+
+def _get_database_path_for_name(building_name: str) -> Path:
+    """Get the database file path for a specific building name."""
+    sanitized = _sanitize_building_name(building_name)
+    return BASE_DIR / f"monitoring_{sanitized}.db"
 
 
 def _get_database_path() -> Path:
-    """Get the database path based on the building name."""
-    from pathlib import Path
-    # Create a temporary connection to get building name
-    temp_db = BASE_DIR / "monitoring.db"
-    if temp_db.exists():
-        try:
-            temp_conn = sqlite3.connect(temp_db, timeout=10)
-            temp_conn.row_factory = sqlite3.Row
-            result = temp_conn.execute(
-                "SELECT value FROM application_settings WHERE key = 'building_name' LIMIT 1"
-            ).fetchone()
-            temp_conn.close()
-            if result:
-                building_name = str(result["value"]).replace(" ", "_").replace("/", "_")
-                return BASE_DIR / f"monitoring_{building_name}.db"
-        except Exception:
-            pass
-    return temp_db
+    """Get the database path based on the active building name."""
+    active_name = _get_active_building_name()
+    target_path = _get_database_path_for_name(active_name)
+    if target_path.exists():
+        return target_path
+    if active_name == "Unknown Building":
+        unknown_db = BASE_DIR / "monitoring_Unknown_Building.db"
+        if unknown_db.exists():
+            return unknown_db
+        master_db = BASE_DIR / "monitoring.db"
+        if master_db.exists():
+            return master_db
+    return target_path
 
 
 @property
 def DATABASE_PATH():
     return _get_database_path()
+
 
 DATABASE_PATH = _get_database_path()
 
@@ -85,8 +167,11 @@ def _connect() -> sqlite3.Connection:
     return connection
 
 
-def initialize_database() -> None:
-    with _db_lock, _connect() as connection:
+def _initialize_database_file(db_path: Path, building_name: str | None = None) -> None:
+    """Initialize schema on a specific database file."""
+    with _db_lock, sqlite3.connect(db_path, timeout=10) as connection:
+        connection.row_factory = sqlite3.Row
+        connection.execute("PRAGMA journal_mode=WAL")
         connection.executescript(
             """
             CREATE TABLE IF NOT EXISTS telemetry (
@@ -192,6 +277,12 @@ def initialize_database() -> None:
             "INSERT OR IGNORE INTO application_settings (key, value) VALUES ('external_reference_ipv4', ?)",
             (external_reference,),
         )
+        if building_name:
+            connection.execute(
+                "INSERT INTO application_settings (key, value) VALUES ('building_name', ?) "
+                "ON CONFLICT(key) DO UPDATE SET value = excluded.value",
+                (building_name.strip(),),
+            )
         columns = {row[1] for row in connection.execute("PRAGMA table_info(telemetry)")}
         for column in ("send_kbps", "receive_kbps", "throughput_kbps", "mib_in_octets", "mib_out_octets", "mib_in_errors", "mib_out_errors", "mib_in_rate", "mib_out_rate", "anomaly_score", "anomaly_label"):
             if column not in columns:
@@ -209,13 +300,18 @@ def initialize_database() -> None:
         for column, declaration in additions.items():
             if column not in columns:
                 connection.execute(f"ALTER TABLE telemetry ADD COLUMN {column} {declaration}")
-        # Add mac_address column to monitored_devices if not exists
         monitored_columns = {row[1] for row in connection.execute("PRAGMA table_info(monitored_devices)")}
         if "mac_address" not in monitored_columns:
             connection.execute("ALTER TABLE monitored_devices ADD COLUMN mac_address TEXT DEFAULT ''")
-        # Add device_type column to monitored_devices if not exists
         if "device_type" not in monitored_columns:
             connection.execute("ALTER TABLE monitored_devices ADD COLUMN device_type TEXT DEFAULT 'pc'")
+        connection.commit()
+
+
+def initialize_database() -> None:
+    db_path = _get_database_path()
+    building_name = _get_active_building_name()
+    _initialize_database_file(db_path, building_name)
 
 
 def _ping(target: str, count: int = 5) -> dict[str, Any]:
@@ -257,11 +353,12 @@ def _ping(target: str, count: int = 5) -> dict[str, Any]:
 def _collect_device(device: dict[str, Any]) -> dict[str, Any]:
     target = str(device.get("target", ""))
     result = _ping(target)
+    dev_type = str(device.get("device_type") or "pc").upper()
     result.update({
         "recorded_at": _utc_now(),
         "device_name": device.get("name", target),
         "target": target,
-        "device_type": "PC",
+        "device_type": dev_type,
         "protocol": "icmp",
         "packet_loss": result["packet_loss"],
     })
@@ -357,17 +454,60 @@ def _get_mac_address(target: str) -> str:
     return ""
 
 
-def _detect_device_type(mac_address: str) -> str:
-    """Detect device type from MAC address OUI."""
-    if not mac_address:
-        return "unknown"
-    # Normalize MAC to colon format
-    mac_normalized = mac_address.lower().replace("-", ":")
-    # Get OUI (first 3 bytes)
-    oui = ":".join(mac_normalized.split(":")[:3]) if len(mac_normalized.split(":")) >= 3 else ""
-    if oui in PHONE_MANUFACTURERS:
-        return "phone"
-    return "pc"
+
+def _probe_switch_ports(target: str, timeout: float = 0.4) -> bool:
+    """Return True if the target looks like a managed switch based on open TCP ports.
+
+    Managed switches consistently expose SSH (22) or Telnet (23) alongside a
+    web management UI (80 / 443).  A device that has *both* a CLI port and a
+    web port is very likely a switch or router, not a workstation or phone.
+    """
+    cli_ports = (22, 23)
+    web_ports = (80, 443)
+
+    def _is_open(port: int) -> bool:
+        try:
+            with socket.create_connection((target, port), timeout=timeout):
+                return True
+        except OSError:
+            return False
+
+    with ThreadPoolExecutor(max_workers=4) as executor:
+        futures = {port: executor.submit(_is_open, port) for port in (*cli_ports, *web_ports)}
+        results = {port: future.result() for port, future in futures.items()}
+
+    has_cli = any(results[p] for p in cli_ports)
+    has_web = any(results[p] for p in web_ports)
+    return has_cli and has_web
+
+
+def _detect_device_type(mac_address: str, target: str = "") -> str:
+    """Detect device type using a two-stage strategy.
+
+    Stage 1 — MAC OUI lookup (instant, no network I/O):
+      • Matches known phone OUIs  → "phone"
+      • Matches known switch OUIs → "switch"
+
+    Stage 2 — TCP port fingerprinting (only when MAC is ambiguous or missing):
+      • Probes CLI ports (22, 23) and web UI ports (80, 443) in parallel.
+      • A device exposing both a CLI port AND a web port is classified as "switch".
+    """
+    if mac_address:
+        mac_normalized = mac_address.lower().replace("-", ":")
+        oui = ":".join(mac_normalized.split(":")[:3]) if len(mac_normalized.split(":")) >= 3 else ""
+        if oui in PHONE_MANUFACTURERS:
+            return "phone"
+        if oui in SWITCH_MANUFACTURERS:
+            return "switch"
+
+    if target:
+        try:
+            if _probe_switch_ports(target):
+                return "switch"
+        except Exception:
+            pass
+
+    return "pc" if mac_address else "unknown"
 
 
 def _resolve_hostname(target: str) -> str:
@@ -640,7 +780,7 @@ def discover_hosts(subnet: str, limit: int = 0) -> list[dict[str, str]]:
                 continue
             if result["online"]:
                 mac_addr = _get_mac_address(target)
-                device_type = _detect_device_type(mac_addr)
+                device_type = _detect_device_type(mac_addr, target)
                 found.append({"name": target, "target": target, "mac_address": mac_addr, "device_type": device_type})
     return sorted(found, key=lambda item: ipaddress.ip_address(item["target"]))
 
@@ -652,11 +792,14 @@ def get_monitored_devices() -> list[dict[str, Any]]:
     return [_row_dict(row) for row in rows]
 
 
-def add_monitored_device(name: str, target: str) -> dict[str, Any]:
+def add_monitored_device(name: str, target: str, device_type: str | None = None) -> dict[str, Any]:
     initialize_database()
     address = ipaddress.ip_address(target)
     mac_addr = _get_mac_address(str(address))
-    device_type = _detect_device_type(mac_addr)
+    if not device_type or device_type == "auto":
+        resolved_device_type = _detect_device_type(mac_addr, str(address))
+    else:
+        resolved_device_type = str(device_type).strip().lower()
     
     # Auto-resolve hostname if name is empty or just an IP address
     clean_name = name.strip()[:100] if name.strip() else ""
@@ -670,13 +813,13 @@ def add_monitored_device(name: str, target: str) -> dict[str, Any]:
     with _db_lock, _connect() as connection:
         connection.execute(
             "INSERT INTO monitored_devices (name, target, active, interval_seconds, added_at, mac_address, device_type) VALUES (?, ?, 0, ?, ?, ?, ?) ON CONFLICT(target) DO UPDATE SET name = excluded.name, mac_address = excluded.mac_address, device_type = excluded.device_type",
-            (clean_name, str(address), POLL_INTERVAL_SECONDS, _utc_now(), mac_addr, device_type),
+            (clean_name, str(address), POLL_INTERVAL_SECONDS, _utc_now(), mac_addr, resolved_device_type),
         )
         row = connection.execute("SELECT * FROM monitored_devices WHERE target = ?", (str(address),)).fetchone()
     return _row_dict(row)
 
 
-def update_monitored_device(device_id: int, *, active: bool | None = None, interval_seconds: int | None = None) -> bool:
+def update_monitored_device(device_id: int, *, active: bool | None = None, interval_seconds: int | None = None, device_type: str | None = None) -> bool:
     initialize_database()
     with _db_lock, _connect() as connection:
         if active is not None:
@@ -684,7 +827,35 @@ def update_monitored_device(device_id: int, *, active: bool | None = None, inter
         if interval_seconds is not None:
             interval = max(5, min(int(interval_seconds), 3600))
             connection.execute("UPDATE monitored_devices SET interval_seconds = ? WHERE id = ?", (interval, device_id))
+        if device_type is not None:
+            connection.execute("UPDATE monitored_devices SET device_type = ? WHERE id = ?", (str(device_type).strip().lower(), device_id))
         return connection.execute("SELECT changes()").fetchone()[0] > 0
+
+
+def reclassify_monitored_devices() -> list[dict[str, Any]]:
+    """Re-detect device type for all currently monitored devices."""
+    initialize_database()
+    updated = []
+    with _db_lock, _connect() as connection:
+        rows = connection.execute("SELECT id, name, target, mac_address, device_type FROM monitored_devices").fetchall()
+        for row in rows:
+            dev_id = row["id"]
+            target = str(row["target"])
+            mac = row["mac_address"] or _get_mac_address(target)
+            new_type = _detect_device_type(mac, target)
+            old_type = row["device_type"]
+            connection.execute(
+                "UPDATE monitored_devices SET device_type = ?, mac_address = coalesce(?, mac_address) WHERE id = ?",
+                (new_type, mac, dev_id),
+            )
+            updated.append({
+                "id": dev_id,
+                "name": row["name"],
+                "target": target,
+                "old_type": old_type,
+                "new_type": new_type,
+            })
+    return updated
 
 
 def remove_monitored_device(device_id: int) -> bool:
@@ -703,8 +874,8 @@ def _poll_devices(devices: list[dict[str, Any]]) -> list[dict[str, Any]]:
             anomaly_score = 1.0 if status == "Flagged" else 0.0
             sample.update({"anomaly_label": result, "anomaly_score": anomaly_score, "status": status})
             connection.execute(
-                "INSERT INTO telemetry (recorded_at, device_name, target, device_type, protocol, online, latency_ms, packet_loss, latency_min_ms, latency_median_ms, latency_max_ms, ping_sent, ping_received, latency_readings, anomaly_score, anomaly_label, error) VALUES (?, ?, ?, 'PC', 'icmp', ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
-                (sample["recorded_at"], sample["device_name"], sample["target"], int(sample["online"]), sample["latency_ms"], sample["packet_loss"], sample["latency_min_ms"], sample["latency_median_ms"], sample["latency_max_ms"], sample["ping_sent"], sample["ping_received"], sample["latency_readings"], anomaly_score, result, sample["error"]),
+                "INSERT INTO telemetry (recorded_at, device_name, target, device_type, protocol, online, latency_ms, packet_loss, latency_min_ms, latency_median_ms, latency_max_ms, ping_sent, ping_received, latency_readings, anomaly_score, anomaly_label, error) VALUES (?, ?, ?, ?, 'icmp', ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+                (sample["recorded_at"], sample["device_name"], sample["target"], sample.get("device_type", "PC"), int(sample["online"]), sample["latency_ms"], sample["packet_loss"], sample["latency_min_ms"], sample["latency_median_ms"], sample["latency_max_ms"], sample["ping_sent"], sample["ping_received"], sample["latency_readings"], anomaly_score, result, sample["error"]),
             )
             connection.execute(
                 "INSERT INTO ml_records (recorded_at, device_name, model_version, result, confidence, status) VALUES (?, ?, 'icmp-ping-v1', ?, ?, ?)",
@@ -974,25 +1145,99 @@ def save_recommendation_outcome(
 
 
 def get_building_name() -> str:
-    """Get the current building name from application settings."""
-    initialize_database()
-    with _db_lock, _connect() as connection:
-        row = connection.execute(
-            "SELECT value FROM application_settings WHERE key = 'building_name'"
-        ).fetchone()
-    return str(row["value"]) if row else "Unknown Building"
+    """Get the current building name from master settings or active db."""
+    return _get_active_building_name()
 
 
 def save_building_name(name: str) -> str:
-    """Save the building name to application settings."""
+    """Create/register a building database and make it the active database."""
+    global _active_building_name_cache
     clean_name = name.strip()[:100] or "Unknown Building"
-    initialize_database()
-    with _db_lock, _connect() as connection:
-        connection.execute(
-            "INSERT INTO application_settings (key, value) VALUES ('building_name', ?) "
-            "ON CONFLICT(key) DO UPDATE SET value = excluded.value",
-            (clean_name,),
-        )
+    target_path = _get_database_path_for_name(clean_name)
+
+    # 1. Initialize the new/target database with tables (starts empty if fresh)
+    _initialize_database_file(target_path, clean_name)
+
+    # 2. Update master monitoring.db with the active building
+    master_db = BASE_DIR / "monitoring.db"
+    try:
+        with sqlite3.connect(master_db, timeout=10) as master_conn:
+            master_conn.execute(
+                "CREATE TABLE IF NOT EXISTS application_settings (key TEXT PRIMARY KEY, value TEXT NOT NULL)"
+            )
+            master_conn.execute(
+                "INSERT INTO application_settings (key, value) VALUES ('active_building_name', ?) "
+                "ON CONFLICT(key) DO UPDATE SET value = excluded.value",
+                (clean_name,),
+            )
+            master_conn.execute(
+                "INSERT INTO application_settings (key, value) VALUES ('building_name', ?) "
+                "ON CONFLICT(key) DO UPDATE SET value = excluded.value",
+                (clean_name,),
+            )
+            master_conn.commit()
+    except Exception:
+        pass
+
+    # 3. Update active cache
+    with _active_db_lock:
+        _active_building_name_cache = clean_name
+
+    return clean_name
+
+
+def switch_to_database(name: str) -> str:
+    """Switch active database to the specified building."""
+    global _active_building_name_cache
+    clean_name = name.strip()
+    target_path = _get_database_path_for_name(clean_name)
+
+    # If the file for clean_name doesn't exist by direct sanitize, check existing db files
+    if not target_path.exists():
+        for db_file in BASE_DIR.glob("monitoring_*.db"):
+            try:
+                with sqlite3.connect(db_file, timeout=2) as conn:
+                    conn.row_factory = sqlite3.Row
+                    row = conn.execute(
+                        "SELECT value FROM application_settings WHERE key = 'building_name' LIMIT 1"
+                    ).fetchone()
+                    if row and str(row["value"]).strip().lower() == clean_name.lower():
+                        target_path = db_file
+                        clean_name = str(row["value"]).strip()
+                        break
+            except Exception:
+                pass
+
+    if not target_path.exists() and (BASE_DIR / "monitoring.db").exists() and clean_name == "Unknown Building":
+        target_path = BASE_DIR / "monitoring.db"
+
+    # Make sure target database is initialized
+    _initialize_database_file(target_path, clean_name)
+
+    # Update master monitoring.db with active pointer
+    master_db = BASE_DIR / "monitoring.db"
+    try:
+        with sqlite3.connect(master_db, timeout=10) as master_conn:
+            master_conn.execute(
+                "CREATE TABLE IF NOT EXISTS application_settings (key TEXT PRIMARY KEY, value TEXT NOT NULL)"
+            )
+            master_conn.execute(
+                "INSERT INTO application_settings (key, value) VALUES ('active_building_name', ?) "
+                "ON CONFLICT(key) DO UPDATE SET value = excluded.value",
+                (clean_name,),
+            )
+            master_conn.execute(
+                "INSERT INTO application_settings (key, value) VALUES ('building_name', ?) "
+                "ON CONFLICT(key) DO UPDATE SET value = excluded.value",
+                (clean_name,),
+            )
+            master_conn.commit()
+    except Exception:
+        pass
+
+    with _active_db_lock:
+        _active_building_name_cache = clean_name
+
     return clean_name
 
 
@@ -1001,21 +1246,49 @@ def get_available_databases() -> list[dict[str, str]]:
     databases = []
     seen_names = set()
     try:
-        # Check for base monitoring.db
-        if (BASE_DIR / "monitoring.db").exists():
-            databases.append({"name": "Unknown Building", "filename": "monitoring.db", "path": str(BASE_DIR / "monitoring.db")})
-            seen_names.add("Unknown Building")
-        
-        # Check for monitoring_*.db files
-        for db_file in BASE_DIR.glob("monitoring_*.db"):
-            # Extract building name from filename
-            filename = db_file.name  # e.g., "monitoring_Building_1.db"
-            building_name = filename.replace("monitoring_", "").replace(".db", "").replace("_", " ")
-            # Skip duplicates
-            if building_name not in seen_names:
-                databases.append({"name": building_name, "filename": db_file.name, "path": str(db_file)})
-                seen_names.add(building_name)
+        for db_file in sorted(BASE_DIR.glob("monitoring_*.db")):
+            b_name = None
+            try:
+                with sqlite3.connect(db_file, timeout=2) as conn:
+                    conn.row_factory = sqlite3.Row
+                    row = conn.execute(
+                        "SELECT value FROM application_settings WHERE key = 'building_name' LIMIT 1"
+                    ).fetchone()
+                    if row and row["value"]:
+                        b_name = str(row["value"]).strip()
+            except Exception:
+                pass
+            if not b_name:
+                b_name = db_file.stem.replace("monitoring_", "").replace("_", " ").strip()
+            if b_name and b_name not in seen_names:
+                databases.append({"name": b_name, "filename": db_file.name, "path": str(db_file)})
+                seen_names.add(b_name)
+
+        # Check master monitoring.db if not already covered
+        master_db = BASE_DIR / "monitoring.db"
+        if master_db.exists():
+            master_name = None
+            try:
+                with sqlite3.connect(master_db, timeout=2) as conn:
+                    conn.row_factory = sqlite3.Row
+                    row = conn.execute(
+                        "SELECT value FROM application_settings WHERE key = 'building_name' LIMIT 1"
+                    ).fetchone()
+                    if row and row["value"]:
+                        master_name = str(row["value"]).strip()
+            except Exception:
+                pass
+            if not master_name:
+                master_name = "Unknown Building"
+            if master_name not in seen_names and "Unknown Building" not in seen_names:
+                databases.append({"name": master_name, "filename": master_db.name, "path": str(master_db)})
+                seen_names.add(master_name)
+
+        current = get_building_name()
+        if current and current not in seen_names:
+            target_path = _get_database_path_for_name(current)
+            databases.append({"name": current, "filename": target_path.name, "path": str(target_path)})
     except Exception:
         pass
-    
-    return sorted(databases, key=lambda x: x["name"])
+
+    return sorted(databases, key=lambda x: x["name"].lower())

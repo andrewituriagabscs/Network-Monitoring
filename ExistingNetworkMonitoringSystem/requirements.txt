@@ -6,3 +6,4 @@ joblib>=1.4
 scikit-learn>=1.6
 xgboost>=2.1
 torch>=2.6
+pysnmp>=7.1,<8

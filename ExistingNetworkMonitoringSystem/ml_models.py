@@ -225,7 +225,11 @@ def _train_xgboost(samples: list[dict[str, Any]], labels: dict[int, str]):
 
     import joblib
     import numpy as np
-    from sklearn.metrics import f1_score
+    from sklearn.ensemble import RandomForestClassifier
+    from sklearn.linear_model import LogisticRegression
+    from sklearn.metrics import balanced_accuracy_score, f1_score, precision_recall_fscore_support
+    from sklearn.pipeline import make_pipeline
+    from sklearn.preprocessing import StandardScaler
     from xgboost import XGBClassifier
 
     feature_vectors = _feature_map(samples)
@@ -237,14 +241,22 @@ def _train_xgboost(samples: list[dict[str, Any]], labels: dict[int, str]):
     train_rows = [row for row in rows if (row.get("recorded_at") or "") < test_start]
     test_rows = [row for row in rows if (row.get("recorded_at") or "") >= test_start]
     train_classes = {labels[int(row["id"])] for row in train_rows}
-    if len(train_classes) < 2 or not test_rows:
+    test_classes = {labels[int(row["id"])] for row in test_rows}
+    missing_train_classes = set(classes) - train_classes
+    missing_test_classes = set(classes) - test_classes
+    if missing_train_classes or missing_test_classes or not test_rows:
         return _result(
             "not_ready",
-            reason="Need at least two conditions in the earlier training period and later test samples.",
+            reason=(
+                "Every reviewed condition must appear in both the earlier training period "
+                "and the later chronological test set."
+            ),
             class_counts=dict(counts),
+            missing_training_classes=sorted(missing_train_classes),
+            missing_test_classes=sorted(missing_test_classes),
         )
 
-    def make_estimator():
+    def make_xgboost_estimator():
         return XGBClassifier(
             n_estimators=120,
             max_depth=4,
@@ -262,12 +274,52 @@ def _train_xgboost(samples: list[dict[str, Any]], labels: dict[int, str]):
     train_y = np.asarray([class_to_id[labels[int(row["id"])]] for row in train_rows])
     test_x = np.vstack([feature_vectors[int(row["id"])] for row in test_rows])
     test_y = np.asarray([class_to_id[labels[int(row["id"])]] for row in test_rows])
-    evaluation_model = make_estimator()
-    evaluation_model.fit(train_x, train_y)
-    predictions = evaluation_model.predict(test_x)
-    macro_f1 = float(f1_score(test_y, predictions, average="macro", zero_division=0))
+    evaluation_models = {
+        "xgboost": make_xgboost_estimator(),
+        "logistic_regression": make_pipeline(
+            StandardScaler(),
+            LogisticRegression(max_iter=2000, random_state=42),
+        ),
+        "random_forest": RandomForestClassifier(
+            n_estimators=200,
+            random_state=42,
+            n_jobs=1,
+        ),
+    }
+    comparison_results = {}
+    class_ids = np.arange(len(classes))
+    for model_name, evaluation_model in evaluation_models.items():
+        evaluation_model.fit(train_x, train_y)
+        predictions = evaluation_model.predict(test_x)
+        precision, recall, class_f1, support = precision_recall_fscore_support(
+            test_y,
+            predictions,
+            labels=class_ids,
+            zero_division=0,
+        )
+        comparison_results[model_name] = {
+            "macro_f1": round(float(f1_score(
+                test_y,
+                predictions,
+                labels=class_ids,
+                average="macro",
+                zero_division=0,
+            )), 4),
+            "balanced_accuracy": round(float(balanced_accuracy_score(test_y, predictions)), 4),
+            "per_class": {
+                label: {
+                    "precision": round(float(precision[index]), 4),
+                    "recall": round(float(recall[index]), 4),
+                    "f1": round(float(class_f1[index]), 4),
+                    "support": int(support[index]),
+                }
+                for index, label in enumerate(classes)
+            },
+        }
 
-    final_model = make_estimator()
+    macro_f1 = comparison_results["xgboost"]["macro_f1"]
+
+    final_model = make_xgboost_estimator()
     all_x = np.vstack([feature_vectors[int(row["id"])] for row in rows])
     all_y = np.asarray([class_to_id[labels[int(row["id"])]] for row in rows])
     final_model.fit(all_x, all_y)
@@ -287,7 +339,15 @@ def _train_xgboost(samples: list[dict[str, Any]], labels: dict[int, str]):
         class_counts=dict(counts),
         temporal_test_samples=len(test_rows),
         temporal_test_start=test_start,
-        temporal_test_macro_f1=round(macro_f1, 4),
+        temporal_test_macro_f1=macro_f1,
+        classifier_comparison={
+            "protocol": "single chronological 80/20 holdout",
+            "train_samples": len(train_rows),
+            "test_samples": len(test_rows),
+            "test_start": test_start,
+            "models": comparison_results,
+            "note": "Exploratory comparison; validate on additional future periods before selecting a model.",
+        },
     )
 
 

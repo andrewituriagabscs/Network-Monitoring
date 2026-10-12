@@ -7,7 +7,7 @@ import ipaddress
 from flask import Flask, jsonify, make_response, render_template, request
 from dashboard import get_dashboard_data
 from ml_models import CONDITION_LABELS, get_ml_insights, get_training_readiness, is_valid_ping_sample, train_models
-from monitoring import add_monitored_device, discover_hosts, get_available_databases, get_building_name, get_local_network, get_ml_labeling_samples, get_ml_training_data, get_monitoring_data, get_network_reference_samples, get_network_reference_status, get_recommendation_feedback, initialize_database, poll_network_references, poll_once, remove_monitored_device, save_building_name, save_condition_label, save_external_reference_target, save_recommendation_outcome, save_recommendation_selection, start_monitoring, stop_monitoring, update_monitored_device
+from monitoring import add_monitored_device, discover_hosts, get_available_databases, get_building_name, get_local_network, get_ml_labeling_samples, get_ml_training_data, get_monitoring_data, get_network_reference_samples, get_network_reference_status, get_recommendation_feedback, initialize_database, poll_network_references, poll_once, remove_monitored_device, save_building_name, save_condition_label, save_external_reference_target, save_recommendation_outcome, save_recommendation_selection, start_monitoring, stop_monitoring, update_monitored_device, reclassify_monitored_devices, switch_to_database
 
 app = Flask(__name__, static_folder="static", template_folder="templates")
 start_monitoring()
@@ -106,7 +106,7 @@ def select_database():
     if not building_name:
         return jsonify({"error": "Building name is required"}), 400
     try:
-        saved_name = save_building_name(building_name)
+        saved_name = switch_to_database(building_name)
     except (AttributeError, TypeError, ValueError) as error:
         return jsonify({"error": str(error)}), 400
     return jsonify({"ok": True, "building_name": saved_name, "message": f"Switched to {saved_name} database"})
@@ -250,7 +250,7 @@ def add_devices():
             address = ipaddress.ip_address(device["target"])
             if address not in local_network:
                 raise ValueError(f"{address} is outside the active local network")
-            added.append(add_monitored_device(str(device.get("name", address)), str(address)))
+            added.append(add_monitored_device(str(device.get("name", address)), str(address), device_type=device.get("device_type")))
         return jsonify({"devices": added}), 201
     except (KeyError, TypeError, ValueError) as error:
         return jsonify({"error": str(error)}), 400
@@ -259,13 +259,27 @@ def add_devices():
 @app.patch("/api/devices/<int:device_id>")
 def update_device(device_id):
     payload = request.get_json(silent=True) or {}
-    if "active" not in payload and "interval_seconds" not in payload:
-        return jsonify({"error": "provide active or interval_seconds"}), 400
+    if "active" not in payload and "interval_seconds" not in payload and "device_type" not in payload:
+        return jsonify({"error": "provide active, interval_seconds, or device_type"}), 400
     try:
-        updated = update_monitored_device(device_id, active=payload.get("active"), interval_seconds=payload.get("interval_seconds"))
+        updated = update_monitored_device(
+            device_id,
+            active=payload.get("active"),
+            interval_seconds=payload.get("interval_seconds"),
+            device_type=payload.get("device_type"),
+        )
     except (TypeError, ValueError) as error:
         return jsonify({"error": str(error)}), 400
     return (jsonify({"ok": True}) if updated else (jsonify({"error": "device not found"}), 404))
+
+
+@app.post("/api/devices/reclassify")
+def reclassify_devices():
+    try:
+        results = reclassify_monitored_devices()
+        return jsonify({"ok": True, "reclassified": results})
+    except Exception as error:
+        return jsonify({"error": str(error)}), 500
 
 
 @app.delete("/api/devices/<int:device_id>")

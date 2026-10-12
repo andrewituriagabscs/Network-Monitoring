@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import asyncio
 import os
 import platform
 import re
@@ -71,6 +72,171 @@ _db_lock = threading.Lock()
 _reference_poll_lock = threading.Lock()
 _worker: threading.Thread | None = None
 _stop_event = threading.Event()
+
+try:
+    SNMP_TIMEOUT_SECONDS = max(0.2, min(float(os.getenv("SNMP_TIMEOUT_SECONDS", "1.5")), 5.0))
+except ValueError:
+    SNMP_TIMEOUT_SECONDS = 1.5
+
+try:
+    SNMP_PORT = max(1, min(int(os.getenv("SNMP_PORT", "161")), 65535))
+except ValueError:
+    SNMP_PORT = 161
+
+SNMP_MAX_INTERFACES = 512
+
+
+def _snmp_configuration_state() -> str:
+    version = os.getenv("SNMP_VERSION", "2c").strip().lower()
+    if version in ("2", "2c", "v2c"):
+        return "configured" if os.getenv("SNMP_COMMUNITY", "").strip() else "not_configured"
+    if version in ("3", "v3"):
+        required = ("SNMP_V3_USER", "SNMP_V3_AUTH_KEY", "SNMP_V3_PRIV_KEY")
+        return "configured" if all(os.getenv(name, "").strip() for name in required) else "not_configured"
+    return "unsupported_version"
+
+
+def _snmp_auth_data() -> tuple[Any | None, str]:
+    state = _snmp_configuration_state()
+    if state != "configured":
+        return None, state
+
+    try:
+        from pysnmp.hlapi.v3arch.asyncio import (
+            CommunityData,
+            UsmUserData,
+            usmAesCfb128Protocol,
+            usmHMACSHAAuthProtocol,
+        )
+    except ImportError:
+        return None, "dependency_missing"
+
+    version = os.getenv("SNMP_VERSION", "2c").strip().lower()
+    if version in ("2", "2c", "v2c"):
+        return CommunityData(os.environ["SNMP_COMMUNITY"].strip(), mpModel=1), "configured"
+
+    return UsmUserData(
+        os.environ["SNMP_V3_USER"].strip(),
+        os.environ["SNMP_V3_AUTH_KEY"],
+        os.environ["SNMP_V3_PRIV_KEY"],
+        authProtocol=usmHMACSHAAuthProtocol,
+        privProtocol=usmAesCfb128Protocol,
+    ), "configured"
+
+
+def _empty_snmp_snapshot(status: str, error: str | None = None) -> dict[str, Any]:
+    return {
+        "status": status,
+        "sys_name": None,
+        "sys_description": None,
+        "sys_object_id": None,
+        "uptime_ticks": None,
+        "interfaces_total": None,
+        "interfaces_up": None,
+        "interfaces_down": None,
+        "interface_error": None,
+        "error": error,
+    }
+
+
+async def _query_switch_snmp(target: str, auth_data: Any) -> dict[str, Any]:
+    from pysnmp.hlapi.v3arch.asyncio import (
+        ContextData,
+        ObjectIdentity,
+        ObjectType,
+        SnmpEngine,
+        UdpTransportTarget,
+        get_cmd,
+        walk_cmd,
+    )
+
+    engine = SnmpEngine()
+    try:
+        transport = await UdpTransportTarget.create(
+            (target, SNMP_PORT),
+            timeout=SNMP_TIMEOUT_SECONDS,
+            retries=0,
+        )
+        error, error_status, error_index, values = await get_cmd(
+            engine,
+            auth_data,
+            transport,
+            ContextData(),
+            ObjectType(ObjectIdentity("1.3.6.1.2.1.1.1.0")),
+            ObjectType(ObjectIdentity("1.3.6.1.2.1.1.2.0")),
+            ObjectType(ObjectIdentity("1.3.6.1.2.1.1.3.0")),
+            ObjectType(ObjectIdentity("1.3.6.1.2.1.1.5.0")),
+        )
+        if error:
+            return _empty_snmp_snapshot("unreachable", str(error))
+        if error_status:
+            return _empty_snmp_snapshot(
+                "error",
+                f"{error_status.prettyPrint()} at varbind {error_index}",
+            )
+
+        sys_description, sys_object_id, uptime_ticks, sys_name = (
+            value.prettyPrint() for _, value in values
+        )
+        interface_count = 0
+        interfaces_up = 0
+        interfaces_down = 0
+        interface_error = None
+
+        async for error, error_status, error_index, var_binds in walk_cmd(
+            engine,
+            auth_data,
+            transport,
+            ContextData(),
+            ObjectType(ObjectIdentity("1.3.6.1.2.1.2.2.1.8")),
+            lexicographicMode=False,
+        ):
+            if error:
+                interface_error = str(error)
+                break
+            if error_status:
+                interface_error = f"{error_status.prettyPrint()} at varbind {error_index}"
+                break
+            for _, value in var_binds:
+                interface_count += 1
+                operational_status = int(value)
+                if operational_status == 1:
+                    interfaces_up += 1
+                elif operational_status == 2:
+                    interfaces_down += 1
+                if interface_count >= SNMP_MAX_INTERFACES:
+                    interface_error = "Interface walk capped at 512 entries"
+                    break
+            if interface_count >= SNMP_MAX_INTERFACES:
+                break
+
+        return {
+            "status": "available",
+            "sys_name": sys_name,
+            "sys_description": sys_description,
+            "sys_object_id": sys_object_id,
+            "uptime_ticks": int(uptime_ticks),
+            "interfaces_total": interface_count,
+            "interfaces_up": interfaces_up,
+            "interfaces_down": interfaces_down,
+            "interface_error": interface_error,
+            "error": None,
+        }
+    finally:
+        try:
+            engine.close_dispatcher()
+        except Exception:
+            pass
+
+
+def _poll_switch_snmp(target: str) -> dict[str, Any]:
+    auth_data, state = _snmp_auth_data()
+    if auth_data is None:
+        return _empty_snmp_snapshot(state)
+    try:
+        return asyncio.run(_query_switch_snmp(target, auth_data))
+    except Exception as error:
+        return _empty_snmp_snapshot("error", f"{type(error).__name__}: {error}"[:240])
 
 
 def _utc_now() -> str:
@@ -161,6 +327,22 @@ def initialize_database() -> None:
                 interval_seconds INTEGER NOT NULL DEFAULT 10,
                 added_at TEXT NOT NULL
             );
+            CREATE TABLE IF NOT EXISTS switch_telemetry (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                monitored_device_id INTEGER NOT NULL,
+                recorded_at TEXT NOT NULL,
+                target TEXT NOT NULL,
+                status TEXT NOT NULL,
+                sys_name TEXT,
+                sys_description TEXT,
+                sys_object_id TEXT,
+                uptime_ticks INTEGER,
+                interfaces_total INTEGER,
+                interfaces_up INTEGER,
+                interfaces_down INTEGER,
+                interface_error TEXT,
+                error TEXT
+            );
             CREATE TABLE IF NOT EXISTS application_settings (
                 key TEXT PRIMARY KEY,
                 value TEXT NOT NULL
@@ -182,6 +364,9 @@ def initialize_database() -> None:
                 latency_readings TEXT NOT NULL DEFAULT '[]'
             );
             """
+        )
+        connection.execute(
+            "CREATE INDEX IF NOT EXISTS switch_telemetry_device_id_idx ON switch_telemetry (monitored_device_id, id)"
         )
         external_reference = os.getenv("EXTERNAL_PING_REFERENCE", "1.1.1.1")
         try:
@@ -257,14 +442,18 @@ def _ping(target: str, count: int = 5) -> dict[str, Any]:
 def _collect_device(device: dict[str, Any]) -> dict[str, Any]:
     target = str(device.get("target", ""))
     result = _ping(target)
+    device_type = device.get("device_type", "pc").lower()
     result.update({
+        "monitored_device_id": device.get("id"),
         "recorded_at": _utc_now(),
         "device_name": device.get("name", target),
         "target": target,
-        "device_type": "PC",
+        "device_type": device_type,
         "protocol": "icmp",
         "packet_loss": result["packet_loss"],
     })
+    if device_type == "switch":
+        result["snmp"] = _poll_switch_snmp(target)
     return result
 
 
@@ -649,14 +838,41 @@ def get_monitored_devices() -> list[dict[str, Any]]:
     initialize_database()
     with _db_lock, _connect() as connection:
         rows = connection.execute("SELECT * FROM monitored_devices ORDER BY name COLLATE NOCASE").fetchall()
-    return [_row_dict(row) for row in rows]
+        switch_rows = connection.execute(
+            """
+            SELECT snapshot.*
+            FROM switch_telemetry AS snapshot
+            JOIN (
+                SELECT monitored_device_id, MAX(id) AS latest_id
+                FROM switch_telemetry
+                GROUP BY monitored_device_id
+            ) AS latest ON latest.latest_id = snapshot.id
+            """
+        ).fetchall()
+    latest_switch_data = {int(row["monitored_device_id"]): _row_dict(row) for row in switch_rows}
+    snmp_configured = _snmp_configuration_state() == "configured"
+    devices = [_row_dict(row) for row in rows]
+    for device in devices:
+        if device.get("device_type") == "switch":
+            device["snmp"] = latest_switch_data.get(
+                int(device["id"]),
+                {"status": "waiting" if snmp_configured else _snmp_configuration_state()},
+            )
+        else:
+            device["snmp"] = None
+    return devices
 
 
-def add_monitored_device(name: str, target: str) -> dict[str, Any]:
+def add_monitored_device(name: str, target: str, device_type: str | None = None) -> dict[str, Any]:
     initialize_database()
     address = ipaddress.ip_address(target)
     mac_addr = _get_mac_address(str(address))
-    device_type = _detect_device_type(mac_addr)
+    detected_type = _detect_device_type(mac_addr)
+    # Use provided device_type if given, otherwise use detected type
+    final_device_type = device_type if device_type else detected_type
+    final_device_type = str(final_device_type).lower().strip()
+    if final_device_type not in ("pc", "phone", "switch"):
+        final_device_type = detected_type
     
     # Auto-resolve hostname if name is empty or just an IP address
     clean_name = name.strip()[:100] if name.strip() else ""
@@ -670,13 +886,13 @@ def add_monitored_device(name: str, target: str) -> dict[str, Any]:
     with _db_lock, _connect() as connection:
         connection.execute(
             "INSERT INTO monitored_devices (name, target, active, interval_seconds, added_at, mac_address, device_type) VALUES (?, ?, 0, ?, ?, ?, ?) ON CONFLICT(target) DO UPDATE SET name = excluded.name, mac_address = excluded.mac_address, device_type = excluded.device_type",
-            (clean_name, str(address), POLL_INTERVAL_SECONDS, _utc_now(), mac_addr, device_type),
+            (clean_name, str(address), POLL_INTERVAL_SECONDS, _utc_now(), mac_addr, final_device_type),
         )
         row = connection.execute("SELECT * FROM monitored_devices WHERE target = ?", (str(address),)).fetchone()
     return _row_dict(row)
 
 
-def update_monitored_device(device_id: int, *, active: bool | None = None, interval_seconds: int | None = None) -> bool:
+def update_monitored_device(device_id: int, *, active: bool | None = None, interval_seconds: int | None = None, device_type: str | None = None) -> bool:
     initialize_database()
     with _db_lock, _connect() as connection:
         if active is not None:
@@ -684,12 +900,18 @@ def update_monitored_device(device_id: int, *, active: bool | None = None, inter
         if interval_seconds is not None:
             interval = max(5, min(int(interval_seconds), 3600))
             connection.execute("UPDATE monitored_devices SET interval_seconds = ? WHERE id = ?", (interval, device_id))
+        if device_type is not None:
+            device_type_normalized = str(device_type).lower().strip()
+            if device_type_normalized not in ("pc", "phone", "switch"):
+                device_type_normalized = "pc"
+            connection.execute("UPDATE monitored_devices SET device_type = ? WHERE id = ?", (device_type_normalized, device_id))
         return connection.execute("SELECT changes()").fetchone()[0] > 0
 
 
 def remove_monitored_device(device_id: int) -> bool:
     initialize_database()
     with _db_lock, _connect() as connection:
+        connection.execute("DELETE FROM switch_telemetry WHERE monitored_device_id = ?", (device_id,))
         connection.execute("DELETE FROM monitored_devices WHERE id = ?", (device_id,))
         return connection.execute("SELECT changes()").fetchone()[0] > 0
 
@@ -703,9 +925,28 @@ def _poll_devices(devices: list[dict[str, Any]]) -> list[dict[str, Any]]:
             anomaly_score = 1.0 if status == "Flagged" else 0.0
             sample.update({"anomaly_label": result, "anomaly_score": anomaly_score, "status": status})
             connection.execute(
-                "INSERT INTO telemetry (recorded_at, device_name, target, device_type, protocol, online, latency_ms, packet_loss, latency_min_ms, latency_median_ms, latency_max_ms, ping_sent, ping_received, latency_readings, anomaly_score, anomaly_label, error) VALUES (?, ?, ?, 'PC', 'icmp', ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
-                (sample["recorded_at"], sample["device_name"], sample["target"], int(sample["online"]), sample["latency_ms"], sample["packet_loss"], sample["latency_min_ms"], sample["latency_median_ms"], sample["latency_max_ms"], sample["ping_sent"], sample["ping_received"], sample["latency_readings"], anomaly_score, result, sample["error"]),
+                "INSERT INTO telemetry (recorded_at, device_name, target, device_type, protocol, online, latency_ms, packet_loss, latency_min_ms, latency_median_ms, latency_max_ms, ping_sent, ping_received, latency_readings, anomaly_score, anomaly_label, error) VALUES (?, ?, ?, ?, 'icmp', ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+                (sample["recorded_at"], sample["device_name"], sample["target"], sample["device_type"], int(sample["online"]), sample["latency_ms"], sample["packet_loss"], sample["latency_min_ms"], sample["latency_median_ms"], sample["latency_max_ms"], sample["ping_sent"], sample["ping_received"], sample["latency_readings"], anomaly_score, result, sample["error"]),
             )
+            switch_sample = sample.get("snmp")
+            if sample["device_type"] == "switch" and switch_sample and switch_sample["status"] != "not_configured":
+                connection.execute(
+                    """
+                    INSERT INTO switch_telemetry (
+                        monitored_device_id, recorded_at, target, status, sys_name,
+                        sys_description, sys_object_id, uptime_ticks, interfaces_total,
+                        interfaces_up, interfaces_down, interface_error, error
+                    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                    """,
+                    (
+                        sample["monitored_device_id"], sample["recorded_at"], sample["target"],
+                        switch_sample["status"], switch_sample.get("sys_name"),
+                        switch_sample.get("sys_description"), switch_sample.get("sys_object_id"),
+                        switch_sample.get("uptime_ticks"), switch_sample.get("interfaces_total"),
+                        switch_sample.get("interfaces_up"), switch_sample.get("interfaces_down"),
+                        switch_sample.get("interface_error"), switch_sample.get("error"),
+                    ),
+                )
             connection.execute(
                 "INSERT INTO ml_records (recorded_at, device_name, model_version, result, confidence, status) VALUES (?, ?, 'icmp-ping-v1', ?, ?, ?)",
                 (sample["recorded_at"], sample["device_name"], result, confidence, status),
@@ -822,7 +1063,7 @@ def get_ml_training_data() -> tuple[list[dict[str, Any]], dict[int, str]]:
         samples = [
             _row_dict(row)
             for row in connection.execute(
-                "SELECT * FROM telemetry WHERE protocol = 'icmp' ORDER BY id"
+                "SELECT * FROM telemetry WHERE protocol = 'icmp' AND LOWER(device_type) != 'switch' ORDER BY id"
             )
         ]
         labels = {
@@ -844,6 +1085,7 @@ def get_ml_labeling_samples(limit: int = 100) -> list[dict[str, Any]]:
             FROM telemetry
             LEFT JOIN condition_labels ON condition_labels.telemetry_id = telemetry.id
             WHERE telemetry.protocol = 'icmp'
+                            AND LOWER(telemetry.device_type) != 'switch'
               AND ((telemetry.online = 1 AND telemetry.ping_received > 0
                     AND COALESCE(telemetry.latency_median_ms, telemetry.latency_ms) IS NOT NULL)
                    OR (telemetry.online = 0 AND telemetry.ping_received = 0))
@@ -864,6 +1106,7 @@ def save_condition_label(telemetry_id: int, label: str) -> bool:
             """
             SELECT id FROM telemetry
             WHERE id = ? AND protocol = 'icmp'
+                            AND LOWER(device_type) != 'switch'
               AND ((online = 1 AND ping_received > 0
                     AND COALESCE(latency_median_ms, latency_ms) IS NOT NULL)
                    OR (online = 0 AND ping_received = 0))

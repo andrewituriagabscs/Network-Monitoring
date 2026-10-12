@@ -44,7 +44,7 @@
             </section>
 
             <section class="view-panel data-panel" data-panel="monitor" hidden>
-                <div class="monitor-heading"><div><p class="eyebrow">Local network</p><h1>Monitor PCs</h1><p class="panel-intro">Discover responding PCs, select the ones to monitor, and start ping checks.</p></div><button class="refresh-button" type="button" onclick="pollNow(this)">↻ <span>Ping now</span></button></div>
+                <div class="monitor-heading"><div><p class="eyebrow">Local network</p><h1>Monitor Devices</h1><p class="panel-intro">Discover responding devices (PCs and phones), select the ones to monitor, and start ping checks.</p></div><button class="refresh-button" type="button" onclick="pollNow(this)">↻ <span>Ping now</span></button></div>
                 <section class="discovery-controls">
                     <label for="subnet-input">Subnet to discover</label>
                     <div class="discovery-row"><input id="subnet-input" type="text" inputmode="decimal" aria-label="Local IPv4 subnet in CIDR notation"><button class="refresh-button" id="discover-button" type="button" onclick="discoverHosts(this)">⌕ <span>Discover PCs</span></button><button class="refresh-button" id="auto-discover-toggle" type="button" onclick="toggleAutoDiscover(this)" style="display: none;">⟳ <span>Auto refresh: off</span></button></div>
@@ -54,16 +54,23 @@
                     </div>
                     <p id="discovery-status" role="status"></p>
                 </section>
-                <section id="discovery-section" hidden><div class="section-heading"><h2>Available PCs</h2><button class="refresh-button" type="button" onclick="addSelectedHosts()">＋ <span>Add selected</span></button></div><div class="table-wrap"><table><thead><tr><th>Select</th><th>PC / hostname</th><th>IPv4 address</th></tr></thead><tbody id="discovered-rows"></tbody></table></div></section>
-                <section><div class="section-heading"><h2>Selected PCs</h2><span id="monitor-summary"></span></div>
+                <section id="discovery-section" hidden><div class="section-heading"><h2>Available Devices</h2><button class="refresh-button" type="button" onclick="addSelectedHosts()">＋ <span>Add selected</span></button></div><div class="table-wrap"><table><thead><tr><th>Select</th><th>Device / hostname</th><th>IPv4 address</th><th>Device Type</th></tr></thead><tbody id="discovered-rows"></tbody></table></div></section>
+                <section><div class="section-heading"><h2>Selected Devices</h2><span id="monitor-summary"></span></div>
                     <div style="display: flex; gap: 12px; margin-bottom: 16px; flex-wrap: wrap; align-items: center;">
                         <input id="monitor-search" type="text" placeholder="Search by IP or hostname..." style="flex: 1; min-width: 200px; padding: 8px; border: 1px solid #ccc; border-radius: 4px;" onkeyup="applySearchAndPagination()">
+                        <select id="device-type-filter" style="padding: 8px; border: 1px solid #ccc; border-radius: 4px;" onchange="applySearchAndPagination()">
+                            <option value="">All devices</option>
+                            <option value="pc">💻 PCs only</option>
+                            <option value="phone">📱 Phones only</option>
+                            <option value="switch">🔀 Switches only</option>
+                            <option value="switch">🔀 Switches only</option>
+                        </select>
                         <button class="refresh-button" type="button" onclick="clearMonitorSearch()" style="padding: 6px 12px;">✕ <span>Clear</span></button>
                         <button class="refresh-button" type="button" onclick="bulkStartAll()" style="padding: 6px 12px; background: #4CAF50;">▶ <span>Start All</span></button>
                         <button class="refresh-button" type="button" onclick="bulkPauseAll()" style="padding: 6px 12px; background: #FF9800;">⏸ <span>Pause All</span></button>
                     </div>
-                    <div class="chart-card"><div class="chart-heading"><div><h2>Ping latency</h2><small>Median of five ICMP replies per check; Windows may report values as &lt;1 ms.</small></div><label for="chart-device">PC</label><select id="chart-device" aria-label="Select PC for latency chart" onchange="drawPingChart()"></select></div><canvas id="ping-chart" height="220"></canvas></div>
-                    <div class="table-wrap"><table><thead><tr><th>PC</th><th>IPv4 address</th><th>Mac Address</th><th>Latest ping</th><th>Min</th><th>Median</th><th>Max</th><th>Loss</th><th>Interval (sec)</th><th>Control</th></tr></thead><tbody id="monitored-rows"></tbody></table></div>
+                    <div class="chart-card"><div class="chart-heading"><div><h2>Ping latency</h2><small>Median of five ICMP replies per check; Windows may report values as &lt;1 ms.</small></div><label for="chart-device">Device</label><select id="chart-device" aria-label="Select device for latency chart" onchange="drawPingChart()"></select></div><canvas id="ping-chart" height="220"></canvas></div>
+                    <div class="table-wrap"><table><thead><tr><th>Device</th><th>IPv4 address</th><th>Mac Address</th><th>Type</th><th>SNMP</th><th>Latest ping</th><th>Min</th><th>Median</th><th>Max</th><th>Loss</th><th>Interval (sec)</th><th>Control</th></tr></thead><tbody id="monitored-rows"></tbody></table></div>
                     <div id="pagination-controls" style="display: flex; gap: 8px; justify-content: center; align-items: center; margin-top: 16px;"></div>
                 </section>
             </section>
@@ -126,8 +133,10 @@
         let autoDiscoverTimer = null;
         let autoDiscoverActive = false;
         let allDiscoveredHosts = [];
+        let discoveryDeviceTypes = {};  // Track device type overrides: {target: 'pc'|'phone'|'auto'}
         let monitorCurrentPage = 1;
         let monitorSearchQuery = '';
+        let monitorDeviceTypeFilter = '';
         let allTelemetry = [];
         let allMlRecords = [];
         let allAlerts = [];
@@ -200,7 +209,8 @@
                 .map((host) => {
                     const icon = host.device_type === 'phone' ? '📱' : '💻';
                     const phoneClass = host.device_type === 'phone' ? ' class="phone-device"' : '';
-                    return `<tr${phoneClass}><td><input type="checkbox" value="${host.target}" ${selected.has(host.target) ? 'disabled' : ''}></td><td>${icon} ${escapeHtml(host.name)}</td><td>${host.target}</td></tr>`;
+                    const currentType = discoveryDeviceTypes[host.target] || 'auto';
+                    return `<tr${phoneClass}><td><input type="checkbox" value="${host.target}" ${selected.has(host.target) ? 'disabled' : ''}></td><td>${icon} ${escapeHtml(host.name)}</td><td>${host.target}</td><td><select onchange="setDiscoveryDeviceType('${host.target}', this.value)" ${selected.has(host.target) ? 'disabled' : ''}><option value="auto" ${currentType === 'auto' ? 'selected' : ''}>🔍 Auto (${host.device_type})</option><option value="pc" ${currentType === 'pc' ? 'selected' : ''}>💻 PC</option><option value="phone" ${currentType === 'phone' ? 'selected' : ''}>📱 Phone</option></select></td></tr>`;
                 })
                 .join('') || '<tr><td colspan="3">No responding devices found.</td></tr>';
             document.querySelector('#discovered-rows').innerHTML = rows;
@@ -234,16 +244,26 @@
             button.classList.remove('active');
         }
 
+        function setDiscoveryDeviceType(target, type) {
+            discoveryDeviceTypes[target] = type;
+        }
+
         async function addSelectedHosts() {
             const selected = [...document.querySelectorAll('#discovered-rows input:checked')].map((checkbox) => {
                 const row = checkbox.closest('tr');
-                return {target: checkbox.value, name: row.cells[1].textContent};
+                const target = checkbox.value;
+                // Find the host data from allDiscoveredHosts to get device_type
+                const host = allDiscoveredHosts.find(h => h.target === target);
+                const userSelectedType = discoveryDeviceTypes[target] || 'auto';
+                const finalType = userSelectedType === 'auto' ? host?.device_type : userSelectedType;
+                return {target: target, name: row.cells[1].textContent, device_type: finalType};
             });
-            if (!selected.length) { setStatus('Select at least one available PC.'); return; }
+            if (!selected.length) { setStatus('Select at least one device.'); return; }
             try {
                 stopDiscoveryRefresh(document.querySelector('#auto-discover-toggle'));
                 await requestJson('/api/devices', {method: 'POST', headers: {'Content-Type': 'application/json'}, body: JSON.stringify({devices: selected})});
-                setStatus(`${selected.length} PC${selected.length === 1 ? '' : 's'} added. Start monitoring when ready.`);
+                discoveryDeviceTypes = {};  // Reset device type selections after adding
+                setStatus(`${selected.length} device${selected.length === 1 ? '' : 's'} added. Start monitoring when ready.`);
                 await refreshStatus();
             } catch (error) { setStatus(error.message); }
         }
@@ -265,6 +285,13 @@
             } catch (error) { setStatus(error.message); }
         }
 
+        async function setDeviceType(id, device_type) {
+            try {
+                await requestJson(`/api/devices/${id}`, {method: 'PATCH', headers: {'Content-Type': 'application/json'}, body: JSON.stringify({device_type})});
+                await refreshStatus();
+            } catch (error) { setStatus(error.message); }
+        }
+
         async function setIntervalSeconds(id, input) {
             const interval_seconds = Number(input.value);
             try {
@@ -280,11 +307,19 @@
 
         function getFilteredDevices() {
             const query = monitorSearchQuery.toLowerCase().trim();
-            if (!query) return monitorDevices;
-            return monitorDevices.filter(device => 
-                device.name.toLowerCase().includes(query) || 
-                device.target.toLowerCase().includes(query)
-            );
+            const deviceTypeFilter = document.querySelector('#device-type-filter')?.value || '';
+            monitorDeviceTypeFilter = deviceTypeFilter;
+            
+            return monitorDevices.filter(device => {
+                // Filter by device type
+                if (deviceTypeFilter && device.device_type !== deviceTypeFilter) {
+                    return false;
+                }
+                // Filter by search query
+                if (!query) return true;
+                return device.name.toLowerCase().includes(query) || 
+                       device.target.toLowerCase().includes(query);
+            });
         }
 
         function renderPagination(filteredCount) {
@@ -299,11 +334,10 @@
             let html = '<button class="range-button" type="button" onclick="previousPage()" ' + (monitorCurrentPage === 1 ? 'disabled' : '') + '>← Previous</button>';
             
             for (let i = 1; i <= totalPages; i++) {
-                if (i === monitorCurrentPage) {
-                    html += `<button class="range-button active" type="button" disabled>${i}</button>`;
-                } else {
-                    html += `<button class="range-button" type="button" onclick="goToPage(${i})">${i}</button>`;
-                }
+                const isCurrentPage = i === monitorCurrentPage;
+                const style = isCurrentPage ? 'style="border: 2px solid #4CAF50;"' : '';
+                const activeClass = isCurrentPage ? 'active' : '';
+                html += `<button class="range-button ${activeClass}" type="button" onclick="goToPage(${i})" ${style}>${i}</button>`;
             }
             
             html += '<button class="range-button" type="button" onclick="nextPage()" ' + (monitorCurrentPage === totalPages ? 'disabled' : '') + '>Next →</button>';
@@ -325,8 +359,8 @@
                 const icon = device.device_type === 'phone' ? '📱' : '💻';
                 const typeLabel = device.device_type === 'phone' ? 'Phone' : 'PC';
                 const deviceClass = device.device_type === 'phone' ? ' class="phone-device"' : '';
-                return `<tr${deviceClass}><td>${icon} ${escapeHtml(device.name)}<br><small style="color: #999;">${typeLabel}</small></td><td>${device.target}</td><td>${device.mac_address || '-'}</td><td>${device.latest?.online ? 'Online' : device.latest ? 'Offline' : 'Not checked'}</td><td>${device.latest?.latency_min_display || '-'}</td><td>${device.latest?.latency_median_display || '-'}</td><td>${device.latest?.latency_max_display || '-'}</td><td>${device.latest ? `${device.latest.packet_loss}%` : '-'}</td><td><input type="number" min="5" max="3600" value="${device.interval_seconds}" aria-label="Ping interval seconds" onchange="setIntervalSeconds(${device.id}, this)"></td><td><button class="range-button" type="button" onclick="setMonitoring(${device.id}, ${!device.active})">${device.active ? 'Pause' : 'Start'}</button> <button class="range-button" type="button" onclick="removeDevice(${device.id})" aria-label="Remove ${escapeHtml(device.name)}">Remove</button></td></tr>`;
-            }).join('') || '<tr><td colspan="10">Discover and add PCs to monitor.</td></tr>';
+                return `<tr${deviceClass}><td>${escapeHtml(device.name)}</td><td>${device.target}</td><td>${device.mac_address || '-'}</td><td><select onchange="setDeviceType(${device.id}, this.value)" style="padding: 4px; min-width: 100px;"><option value="pc" ${device.device_type === 'pc' ? 'selected' : ''}>💻 PC</option><option value="phone" ${device.device_type === 'phone' ? 'selected' : ''}>📱 Phone</option></select></td><td>${device.latest?.online ? 'Online' : device.latest ? 'Offline' : 'Not checked'}</td><td>${device.latest?.latency_min_display || '-'}</td><td>${device.latest?.latency_median_display || '-'}</td><td>${device.latest?.latency_max_display || '-'}</td><td>${device.latest ? `${device.latest.packet_loss}%` : '-'}</td><td><input type="number" min="5" max="3600" value="${device.interval_seconds}" aria-label="Ping interval seconds" onchange="setIntervalSeconds(${device.id}, this)"></td><td><button class="range-button" type="button" onclick="setMonitoring(${device.id}, ${!device.active})">${device.active ? 'Pause' : 'Start'}</button> <button class="range-button" type="button" onclick="removeDevice(${device.id})" aria-label="Remove ${escapeHtml(device.name)}">Remove</button></td></tr>`;
+            }).join('') || '<tr><td colspan="11">Discover and add devices to monitor.</td></tr>';
             
             document.querySelector('#saved-count').textContent = devices.length;
             document.querySelector('#active-count').textContent = devices.filter((device) => device.active).length;
@@ -349,6 +383,7 @@
         function clearMonitorSearch() {
             monitorSearchQuery = '';
             document.querySelector('#monitor-search').value = '';
+            document.querySelector('#device-type-filter').value = '';
             monitorCurrentPage = 1;
             renderDevices(monitorDevices);
         }
@@ -375,27 +410,29 @@
         }
 
         async function bulkStartAll() {
-            if (!confirm(`Start monitoring on all ${monitorDevices.length} PCs?`)) return;
+            const filteredDevices = getFilteredDevices();
+            if (!confirm(`Start monitoring on all ${filteredDevices.length} device${filteredDevices.length === 1 ? '' : 's'}?`)) return;
             try {
-                for (const device of monitorDevices) {
+                for (const device of filteredDevices) {
                     if (!device.active) {
                         await requestJson(`/api/devices/${device.id}`, {method: 'PATCH', headers: {'Content-Type': 'application/json'}, body: JSON.stringify({active: true})});
                     }
                 }
-                setStatus(`✓ Started monitoring on ${monitorDevices.length} PCs`);
+                setStatus(`✓ Started monitoring on ${filteredDevices.length} device${filteredDevices.length === 1 ? '' : 's'}`);
                 await refreshStatus();
             } catch (error) { setStatus(error.message); }
         }
 
         async function bulkPauseAll() {
-            if (!confirm(`Pause monitoring on all ${monitorDevices.length} PCs?`)) return;
+            const filteredDevices = getFilteredDevices();
+            if (!confirm(`Pause monitoring on all ${filteredDevices.length} device${filteredDevices.length === 1 ? '' : 's'}?`)) return;
             try {
-                for (const device of monitorDevices) {
+                for (const device of filteredDevices) {
                     if (device.active) {
                         await requestJson(`/api/devices/${device.id}`, {method: 'PATCH', headers: {'Content-Type': 'application/json'}, body: JSON.stringify({active: false})});
                     }
                 }
-                setStatus(`✓ Paused monitoring on ${monitorDevices.length} PCs`);
+                setStatus(`✓ Paused monitoring on ${filteredDevices.length} device${filteredDevices.length === 1 ? '' : 's'}`);
                 await refreshStatus();
             } catch (error) { setStatus(error.message); }
         }
@@ -413,11 +450,10 @@
             let html = '<button class="range-button" type="button" ' + (currentPage === 1 ? 'disabled' : `onclick="${pageChangeFunction}(${currentPage - 1})`) + '>← Previous</button>';
             
             for (let i = 1; i <= totalPages; i++) {
-                if (i === currentPage) {
-                    html += `<button class="range-button active" type="button" disabled>${i}</button>`;
-                } else {
-                    html += `<button class="range-button" type="button" onclick="${pageChangeFunction}(${i})">${i}</button>`;
-                }
+                const isCurrentPage = i === currentPage;
+                const style = isCurrentPage ? 'style="border: 2px solid #4CAF50;"' : '';
+                const activeClass = isCurrentPage ? 'active' : '';
+                html += `<button class="range-button ${activeClass}" type="button" onclick="${pageChangeFunction}(${i})" ${style}>${i}</button>`;
             }
             
             html += '<button class="range-button" type="button" ' + (currentPage === totalPages ? 'disabled' : `onclick="${pageChangeFunction}(${currentPage + 1})`) + '>Next →</button>';

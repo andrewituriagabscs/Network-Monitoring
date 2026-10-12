@@ -250,7 +250,8 @@ def add_devices():
             address = ipaddress.ip_address(device["target"])
             if address not in local_network:
                 raise ValueError(f"{address} is outside the active local network")
-            added.append(add_monitored_device(str(device.get("name", address)), str(address)))
+            device_type = device.get("device_type")
+            added.append(add_monitored_device(str(device.get("name", address)), str(address), device_type=device_type))
         return jsonify({"devices": added}), 201
     except (KeyError, TypeError, ValueError) as error:
         return jsonify({"error": str(error)}), 400
@@ -259,10 +260,10 @@ def add_devices():
 @app.patch("/api/devices/<int:device_id>")
 def update_device(device_id):
     payload = request.get_json(silent=True) or {}
-    if "active" not in payload and "interval_seconds" not in payload:
-        return jsonify({"error": "provide active or interval_seconds"}), 400
+    if "active" not in payload and "interval_seconds" not in payload and "device_type" not in payload:
+        return jsonify({"error": "provide active, interval_seconds, or device_type"}), 400
     try:
-        updated = update_monitored_device(device_id, active=payload.get("active"), interval_seconds=payload.get("interval_seconds"))
+        updated = update_monitored_device(device_id, active=payload.get("active"), interval_seconds=payload.get("interval_seconds"), device_type=payload.get("device_type"))
     except (TypeError, ValueError) as error:
         return jsonify({"error": str(error)}), 400
     return (jsonify({"ok": True}) if updated else (jsonify({"error": "device not found"}), 404))
